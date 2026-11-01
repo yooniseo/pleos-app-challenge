@@ -78,8 +78,6 @@ Windows 터미널에서 빌드하려면 JDK 17과 Android SDK 경로를 설정�
 3. GitHub Desktop의 `File > Clone repository`에서 위 저장소를 각자 컴퓨터에 복제합니다.
 4. Android Studio에서 복제한 폴더를 엽니다. Windows에서는 한글이 없는 로컬 경로를 사용합니다.
 
-대표자 PC의 실제 개발 경로는 `C:/Users/kim/Projects/pleos-app-challenge`입니다. 바탕화면의 `현대차 공모전/팀프로젝트`는 같은 디렉터리를 가리키는 연결 폴더입니다. Android Studio와 GitHub Desktop에는 영문 경로를 등록하세요. 두 위치에 파일을 각각 복사할 필요가 없습니다.
-
 ### 매일의 작업
 
 1. 시작 전에 GitHub Desktop에서 `Fetch origin`을 누르고, 변경이 있으면 `Pull origin`으로 받습니다.
