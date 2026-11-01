@@ -1,6 +1,6 @@
-# 현대차 공모전 팀 프로젝트 — PleosStarter
+# 현대차 공모전 팀 프로젝트 — 나의 드라이브
 
-공모전 앱의 최종 아이디어를 정하기 전, Kotlin 앱 실행과 Pleos Vehicle SDK 호출을 연습하는 시작 프로젝트입니다.
+속도·네 바퀴 타이어 카드·목적지 안내 요청을 한 화면에서 연습하는 Kotlin 시작 프로젝트입니다. 앱 자체에 지도나 경로 탐색 엔진은 없으며, 실제 길 안내는 Pleos 기본 내비게이션에 요청합니다.
 
 팀 저장소: https://github.com/yooniseo/pleos-app-challenge (비공개, 소유자 yooniseo)
 
@@ -9,16 +9,43 @@
 1. Android Studio에서 이 폴더를 엽니다.
 2. Gradle JDK를 Android Studio에 포함된 JDK 17로 설정하고 Gradle Sync를 진행합니다.
 3. Android SDK Platform 34를 설치합니다.
-4. 공식 가이드에 따라 Pleos Connect 에뮬레이터를 설치·실행합니다.
+4. 일반 Android 에뮬레이터 또는 공식 Pleos Connect 에뮬레이터를 실행합니다.
 5. `app` 실행 대상을 에뮬레이터로 지정하고 Run을 누릅니다.
-6. 앱의 **문 상태 조회**를 누르면 앞줄 왼쪽 문 위치의 원본 응답 값을 표시합니다.
+6. 기본값인 **샘플 데이터로 보기**에서 속도 슬라이더, 네 바퀴 공기압 예시, 목적지 선택을 체험합니다.
+7. Pleos Connect 환경에서는 스위치를 끄고 실제 차량 연결을 시도합니다. 속도 권한이 표시되면 허용합니다.
 
-일반 Android 에뮬레이터에서는 화면을 확인할 수 있지만, 차량 API에는 Pleos의 Vehicle Service가 필요합니다. 화면에 표시하는 값은 SDK에서 실제로 받은 응답입니다.
+샘플 모드의 숫자는 모두 가상 데이터이며 실제 차량을 측정하지 않습니다. 샘플 모드에서는 내비게이션 SDK 호출도 전송하지 않습니다. 실제 모드에서 서비스·권한·차량 지원이 없으면 미지원/조회 불가로 표시하며 샘플 숫자로 대체하지 않습니다.
+
+## 구현 범위와 SDK 제한
+
+| 항목 | 샘플 모드 | 실제 차량 모드 |
+| --- | --- | --- |
+| 속도 | 0~120 km/h 슬라이더 | AAOS `CarPropertyManager`의 `PERF_VEHICLE_SPEED` 구독. m/s의 절댓값 × 3.6으로 표시. 5초간 응답이 없으면 측정값을 숨김 |
+| 타이어 | 네 바퀴 가상 공기압. 180 kPa는 화면 체험용 임의 기준 | Pleos Vehicle의 `getLowTirePressure()`로 **심각한 저압 기준값**만 조회. **현재 공기압이나 저압 발생 여부가 아님** |
+| 목적지 | 서울시청/서울역 선택 결과 표시 | NaviHelper `requestRoute()` 요청. `onRoutingCompleted()`를 받은 뒤 탐색 완료 표시 |
+| 지도 | 제공하지 않음 | `requestNavigationScreen(Foreground)`으로 차량 기본 내비 화면 열기 요청 |
+
+Vehicle SDK **2.3.2의 배포 소스** `ai/pleos/playground/vehicle/api/Tire.kt`에 따르면 현재 공기압을 읽는 `getTirePressure()`는 숨겨진 API이며 `PRIVATE_CAR_SAFETY`(`signature|privileged`) 권한이 필요합니다. 일반 앱용 권한 `CAR_SAFETY`의 `getLowTirePressure()`와 혼동하지 마세요. 이 프로젝트는 제조사 전용 권한을 요청하거나 우회하지 않습니다. 실측 공기압과 마모·펑크 진단은 구현하지 않았습니다. 공모전용 별도 권한 제공 여부는 주최 측 확인이 필요합니다.
+
+- [공식 Vehicle 2.3.2 소스 JAR](https://nexus-playground.pleos.ai/repository/maven-releases/ai/pleos/playground/Vehicle/2.3.2/Vehicle-2.3.2-sources.jar): ZIP처럼 열어 `Tire.kt` 확인
+- [공개 Tire API 목록](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/Vehicle/vehicle/ai.pleos.playground.vehicle.api/tire/entry)
+- 속도 연결은 Pleos 전용 SDK가 아닌 Android Automotive 표준 API입니다. 실제 Pleos 환경의 접근 허용 여부는 별도 실행 검증이 필요합니다.
+
+화면을 닫거나 모드를 바꾸면 서비스·구독을 해제하고 이전 콜백을 무시합니다. 타이어 기준값은 연결 시 한 번 조회합니다. 값 갱신/재연결은 샘플 모드를 켰다가 끄면 됩니다. 내비 응답을 못 받은 상태에서는 중복 경로 요청을 막습니다. 이 예제는 개발·정차 상태에서 기능 연결을 학습하기 위한 화면이며 운전 중 사용을 위한 UX 검증은 하지 않았습니다.
+
+### 코드를 읽는 순서
+
+1. `app/src/main/java/com/hmgchallenge/pleosstarter/MainActivity.kt`: 화면 만들기 → 샘플/실제 모드 → 타이어 기준 조회 → 내비 요청
+2. `SpeedSource.kt`: 차량 속도 이벤트 구독과 연결 해제
+3. `Speed.kt`: m/s를 km/h로 바꾸는 작은 함수
+4. `app/src/main/AndroidManifest.xml`: 차량 속도·안전 정보·내비 요청 권한
+
+별도 지도 API 키나 서버는 필요하지 않습니다. 예제 목적지는 `MainActivity.kt`의 `places` 목록에서 바꿀 수 있습니다. 장소명 검색·현재 위치 지도·자체 길 안내·백그라운드 기록은 구현하지 않았습니다.
 
 Windows 터미널에서 빌드하려면 JDK 17과 Android SDK 경로를 설정한 후 실행합니다.
 
 ```powershell
-.\gradlew.bat :app:assembleDebug :app:lintDebug
+.\gradlew.bat :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
 ```
 
 ## 개발 환경
@@ -26,8 +53,17 @@ Windows 터미널에서 빌드하려면 JDK 17과 Android SDK 경로를 설정�
 - Kotlin 1.9.25 / Kotlin DSL
 - Android Gradle Plugin 8.1.4 / Gradle Wrapper 8.1.1
 - Java 17 / compileSdk·targetSdk 34 / minSdk 28
-- Pleos Vehicle SDK 2.3.2
+- Pleos Vehicle SDK 2.3.2 / NaviHelper SDK 3.0.5
 - 디버그 APK: `app/build/outputs/apk/debug/app-debug.apk`
+
+### 검증 기록 (2026-11-01)
+
+- Windows / Android Studio JDK 17 / Android SDK 34에서 `assembleDebug`, `lintDebug`, `testDebugUnitTest` 확인
+- 속도 변환 단위 테스트 2개: 정방향·후진·정지 및 결측·NaN·무한대·변환 오버플로 처리
+- Lint 오류는 없으며, 한국어 문자열의 리소스 분리·앱 아이콘 등 시작 프로젝트의 개선 경고가 남아 있음
+- 일반 Android 에뮬레이터 부팅이 완료되지 않아 APK 설치·화면 실행 확인은 미완료
+- Pleos 에뮬레이터/실차의 속도, 타이어 기준값, 경로 탐색·내비 화면 전환은 아직 실행 검증하지 못함
+- 다운로드용 debug APK는 GitHub Releases의 `v0.2.0-demo` 체험판에 제공. 서명된 제출용 release APK가 아님
 
 설치된 Android Studio Giraffe 계열과 JDK 17에 맞춘 시작용 버전입니다. 최신 버전 조합을 의미하지 않습니다. compileSdk 34에 관해 AGP가 권장 업그레이드 경고를 출력할 수 있습니다. 도구를 업그레이드할 때는 팀 전체가 함께 맞추세요.
 
@@ -78,3 +114,5 @@ Commit은 내 PC에 변경 기록을 저장하는 동작이고, Push는 그 기�
 - [공모전 제출 안내](https://appdevchallenge.auto-hmg.io/guide/submission)
 - [Pleos 앱 개발 시작하기](https://document.pleos.ai/en/docs/pleos-only/getting-started)
 - [Vehicle SDK](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/Vehicle/intro)
+- [NaviHelper SDK](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/NaviHelper/intro)
+- [Android Automotive 차량 속성](https://developer.android.com/reference/android/car/VehiclePropertyIds#PERF_VEHICLE_SPEED)

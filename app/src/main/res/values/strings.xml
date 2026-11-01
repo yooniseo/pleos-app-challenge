@@ -1,13 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Pleos 첫 연결</string>
-    <string name="heading">차량 API 하나부터 시작하기</string>
-    <string name="description">버튼을 누르면 Vehicle SDK로 앞줄 왼쪽 문 상태를 조회합니다. 실제 차량 데이터 확인에는 Pleos Connect 에뮬레이터가 필요합니다.</string>
-    <string name="read_door">문 상태 조회</string>
-    <string name="waiting">아직 조회하지 않았습니다.</string>
-    <string name="loading">차량 정보 확인 중…</string>
-    <string name="door_result">문 위치 API 응답: %1$d\n이 값은 SDK에서 받은 원본 값입니다.</string>
-    <string name="no_value">호출은 완료됐지만 문 위치 값이 없습니다.</string>
-    <string name="sdk_error">차량 정보를 읽지 못했습니다.\nPleos Connect 에뮬레이터의 Vehicle Service와 권한을 확인하세요.\n\n%1$s</string>
-    <string name="permission_denied">차량 문 정보 권한이 허용되지 않았습니다. 에뮬레이터와 권한 설정을 확인하세요.</string>
+    <string name="app_name">나의 드라이브</string>
 </resources>
