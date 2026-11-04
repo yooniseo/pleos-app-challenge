@@ -69,6 +69,16 @@ Windows 터미널에서 빌드하려면 JDK 17과 Android SDK 경로를 설정�
 
 ## 팀 협업
 
+[세 팀의 실험 브랜치 운영 규칙](CONTRIBUTING.md)을 참고하세요. 기능은 아직 확정되지 않았으며, 지금은 요구사항 명세 대신 [아이디어와 실험 기록](docs/README.md)을 공유합니다.
+
+| 담당 팀 | 사용할 실험 브랜치 |
+| --- | --- |
+| 퀘스트 담당팀 | `scratch/quests` |
+| 주행안내팀 | `scratch/driving-guide` |
+| 주행이후팀 | `scratch/post-drive` |
+
+`scratch`가 올바른 철자입니다. 위 표는 브랜치 운영 규칙이며, 브랜치가 이미 생성되었음을 뜻하지는 않습니다. 각 팀은 자유롭게 시도하고, 결과를 본 뒤 채택 여부를 논의합니다.
+
 각자 GitHub 계정을 사용하고 한 팀 저장소에 팀원을 초대합니다. GitHub Desktop 또는 Android Studio의 Git 기능 중 편한 것을 사용하세요.
 
 ### 팀원 연결
@@ -80,12 +90,12 @@ Windows 터미널에서 빌드하려면 JDK 17과 Android SDK 경로를 설정�
 
 ### 매일의 작업
 
-1. 시작 전에 GitHub Desktop에서 `Fetch origin`을 누르고, 변경이 있으면 `Pull origin`으로 받습니다.
-2. GitHub Issue에 작업과 담당자를 정하고 작업별 브랜치를 만듭니다. 예: `feature/travel-history`, `fix/door-permission`.
-3. 파일을 수정한 뒤 Changes에서 내용을 확인하고 작은 단위로 Commit합니다.
-4. `Push origin`으로 팀 저장소에 올립니다.
-5. Pull Request에 변경 내용과 확인 결과를 적고 팀원 검토 후 `main`에 합칩니다.
-6. 다른 팀원은 최신 `main`을 Pull하여 반영합니다. 작업 브랜치에서는 최신 `main`을 별도로 병합해야 합니다.
+1. GitHub Desktop에서 현재 브랜치가 자기 팀의 `scratch/팀이름`인지 확인합니다.
+2. 하던 작업을 Commit하거나 Stash한 뒤 `Fetch origin`과 `Pull origin`으로 같은 팀의 최신 변경을 받습니다.
+3. 팀원과 담당 파일을 나눠 아이디어를 실험하고 작은 단위로 Commit합니다.
+4. `Push origin`으로 자기 팀 브랜치에 올립니다.
+5. 실험 기록이나 Draft PR에 시도한 내용, 확인 결과, 막힌 점을 공유합니다.
+6. 다른 팀의 실험과 기능 채택 여부를 함께 논의합니다. `main`에 합치는 대상과 시점은 별도로 정합니다.
 
 Commit은 내 PC에 변경 기록을 저장하는 동작이고, Push는 그 기록을 GitHub에 올리는 동작입니다. Fetch는 팀 변경이 있는지 확인하고, Pull은 변경을 내 폴더에 받아옵니다. 파일 저장만으로 업로드되거나 팀 변경이 자동으로 덮어써지지는 않습니다. GitHub Desktop에서 로컬 수정이 표시되면 먼저 Commit하거나 Stash한 뒤 Pull하세요. 충돌이 생기면 내용을 확인하고 해결합니다.
 
