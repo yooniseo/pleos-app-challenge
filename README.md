@@ -69,6 +69,8 @@ Windows 터미널에서 빌드하려면 JDK 17과 Android SDK 경로를 설정�
 
 ## 팀 협업
 
+[파일·폴더 이름과 Git 협업 규칙](CONTRIBUTING.md)에서 팀 검토용 초안을 확인하세요. 개발 설명과 회의록을 둘 위치는 [프로젝트 문서](docs/README.md)에 정리되어 있습니다.
+
 각자 GitHub 계정을 사용하고 한 팀 저장소에 팀원을 초대합니다. GitHub Desktop 또는 Android Studio의 Git 기능 중 편한 것을 사용하세요.
 
 ### 팀원 연결
