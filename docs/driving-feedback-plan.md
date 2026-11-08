@@ -12,7 +12,7 @@
 ## 목차
 
 0. [먼저 할 일: 사전 검증 (2개)](#0-먼저-할-일-사전-검증-2개)
-1. [공통: 구조와 데이터 약속](#1-공통-구조와-데이터-약속)
+1. [공통 구조](#1-공통-구조)
 2. [파트 A: 주행 기록과 연습 메모](#2-파트-a-주행-기록과-연습-메모)
 3. [파트 B: 주행 돌아보기](#3-파트-b-주행-돌아보기)
 4. [파트 C: 연습 퀘스트](#4-파트-c-연습-퀘스트)
@@ -23,19 +23,19 @@
 
 ## 0. 먼저 할 일: 사전 검증 (2개)
 
-**MVP의 핵심 기능은 "속도"와 "음성 메모" 두 가지뿐입니다.** 둘 다 실패해도 대안이 있으므로, 결과에 따라 설계가 바뀌지는 않고 **입력 경로만** 바뀝니다. 결과는 `docs/vehicle-sdk-notes.md`에 기록합니다.
+핵심 기능은 "속도"와 "음성 메모" / 결과는 `docs/vehicle-sdk-notes.md`에 기록.
 
 | # | 확인 항목 | 방법 | 실패 시 대안 |
 |---|---|---|---|
 | V1 | **차량 속도 수신 + 에뮬레이터에서 속도 바꾸기** | 스타터 앱의 `SpeedSource.kt`(AAOS `PERF_VEHICLE_SPEED`)를 Pleos 에뮬레이터에서 실행하고, 에뮬레이터 차량 값 조절 기능 또는 공식 문서 "ADB Command Reference"로 속도를 바꿔 화면 값이 따라오는지 확인 | 실시간 속도는 포기하고 **CSV 재생기(A-4)로 시연**. 분석·리포트·퀘스트는 그대로 동작 |
 | V2 | **STT 동작** (에뮬레이터 마이크) | `SpeechToText(context, Mode.ON_DEVICE)`로 `request()` 후 `onUpdated(..., completed=true)` 결과가 오는지 확인 | 화면의 **텍스트 입력 / 상황 선택 버튼**으로 메모 입력 |
 
-- 두 검증은 각각 반나절 안에 끝내고, 막히면 바로 대안으로 넘어갑니다.
-- 권한(`CAR_SPEED`, `STT_SERVICE`)이 공모전 앱에 허용되는지는 주최 측에 **동시에** 문의합니다.
+
+- 권한(`CAR_SPEED`, `STT_SERVICE`)이 공모전 앱에 허용되는지 확인 필요
 
 ---
 
-## 1. 공통: 구조와 데이터 약속
+## 1. 공통 구조
 
 ### 1-1. 전체 흐름
 
@@ -49,8 +49,8 @@ DrivingScreen                   TripAnalyzer                  QuestEngine
              └──────────── Room DB (TripRepository) ───────────────────┘
 ```
 
-- **A는 기록만, B는 분석만, C는 누적 판단만** 합니다. 서로는 DB 데이터로만 통신합니다.
-- 1-3의 데이터 형식만 합의하면 B와 C는 **가짜 데이터로 바로 개발**할 수 있습니다.
+- **A는 기록만, B는 분석만, C는 누적 판단만** , 서로는 DB 데이터로만 통신합니다.
+- 1-3의 데이터 형식만 합의하면 B와 C는 **가짜 데이터로 바로 개발**할 수 있음.
 
 ### 1-2. 패키지 구조
 
@@ -65,9 +65,7 @@ com/hmgchallenge/pleosstarter/
 └ dev/               TripReplayer.kt (CSV 재생, 디버그 빌드 전용)
 ```
 
-### 1-3. 데이터 모델 (Room Entity) — **세 파트의 약속**
-
-변경하려면 세 담당자 모두의 합의가 필요합니다.
+### 1-3. 데이터 모델 (Room Entity) 
 
 ```kotlin
 // ── A가 저장 ──────────────────────────────────────────
@@ -135,46 +133,29 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 | Pleos **SpeechToText** | 3.3.1 | A | `pleos.car.permission.STT_SERVICE` |
 | AndroidX **Room**, Coroutines | 신규 추가 | 공통 | — |
 
-- Vehicle SDK의 브레이크·조향각·방향지시등, FusedLocation, TTS, Gleo, NaviHelper는 **이번 범위에서 쓰지 않습니다**(6장).
-- Room 추가는 팀 규칙에 따라 **별도 `chore/` PR**로 올립니다.
+- Vehicle SDK의 브레이크·조향각·방향지시등, FusedLocation, TTS, Gleo, NaviHelper는 시간 남으면... 6장 참고.
 
 ---
 
 ## 2. 파트 A: 주행 기록과 연습 메모
 
-**목표:** "주행 시작"을 누르면 1초 단위 속도가 기록되고, 마이크 버튼 하나로 "어려웠던 순간"을 남길 수 있게 합니다.
+**목표:** "주행 시작"을 누르면 1초 단위 속도가 기록되고, 마이크로 "어려웠던 순간"을 남길 수 있게 합니다.
 
 ### A-1. 주행 시작·종료
 
-- 화면의 **"주행 시작" / "주행 종료" 버튼**으로만 제어합니다. (자동 감지는 생략)
-- 종료 시 `TripAnalyzer.analyze(tripId)`를 호출합니다. A와 B의 연결점은 이 함수 하나뿐입니다.
+- 화면의 **"주행 시작" / "주행 종료" 버튼**으로 제어
+- 종료 시 `TripAnalyzer.analyze(tripId)`를 호출합니다. (A와 B의 연결점)
 - 앱이 화면에 떠 있는 동안만 기록합니다. (백그라운드 기록은 생략)
 
 ### A-2. 속도 기록 (`TripRecorder`)
 
-- 기존 `SpeedSource.kt`의 값을 사용합니다. m/s × 3.6 → km/h. 표시·기록 모두 절댓값을 써도 됩니다(후진 판단 안 함).
+- 기존 `SpeedSource.kt`의 값을 사용합니다. (m/s × 3.6 → km/h)
 - 코루틴 `while (isActive) { delay(1000) }` 루프에서 최신 속도를 `TripSample`로 저장합니다. 값이 없으면 `null`.
 - 거리: 종료 시 `Σ speedKmh / 3600`으로 계산합니다.
 
 ### A-3. 연습 메모 (`NoteRecorder`, `NoteClassifier`)
 
-- 주행 화면에 **큰 마이크 버튼 하나**. 누르면 `stt.request()`, 결과가 오면 저장합니다.
-  ```kotlin
-  val stt = SpeechToText(context, Mode.ON_DEVICE)   // 앱 등록 없이 사용 가능
-  stt.initialize()
-  stt.addListener(object : ResultListener {
-      override fun onStartedRecognition() { noteStartT = System.currentTimeMillis() }
-      override fun onUpdated(stt: String, completed: Boolean) { if (completed) saveNote(stt) }
-      override fun onError(errorType: ErrorType) { showMessage("다시 말씀해 주세요") }
-      override fun onReady() {}
-      override fun onEndedRecognition() {}
-      override fun onUpdatedEpdData(on: Long, off: Long) {}
-      override fun onUpdatedRms(rms: Double) {}
-  })
-  // 화면 종료 시: stt.removeListener(l); stt.release()
-  ```
-- 저장 후 화면에 "비보호 좌회전, 기록했어요"처럼 **분류 결과를 짧게 표시**합니다.
-- V2가 실패하면 같은 `saveNote(text)`로 들어가는 **상황 선택 버튼**(좌회전 / 주차 / 차선변경 …)을 둡니다.
+- 주행 중 키워드 감지
 - 분류는 키워드 표로 합니다. 위에서부터 처음 맞는 것:
 
 | 키워드 (공백 제거 후 포함) | 분류 |
@@ -187,16 +168,10 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 | 속도, 과속, 빨리, 느리 | `SPEED_CONTROL` |
 | 그 외 | `OTHER` (원문 보관) |
 
-### A-4. 가짜 주행 재생기 (`dev/TripReplayer`) — 시연의 안전망
 
-- `assets/replay/*.csv`(`t,speedKmh` 또는 `note,<t>,<text>`)를 읽어 **실제 기록과 똑같이 DB에 저장**합니다.
-- 재생 속도: 1배 / 즉시 두 가지만.
-- 시나리오 2개: `smooth.csv`(잘한 주행), `harsh.csv`(급가속·급감속 다수 + 메모 2개).
-- V1이 실패해도 이 재생기로 B·C 전체를 시연할 수 있습니다.
+### A-4. 주행 화면 (`DrivingScreen`)
 
-### A-5. 주행 화면 (`DrivingScreen`)
-
-- 주행 중 화면은 **"기록 중" 표시, 현재 속도, 마이크 버튼, 종료 버튼만** 둡니다. 처음부터 단순하게 만들어 주행 중 조작 부담을 줄입니다.
+- 주행 중 화면은 **"기록 중" 표시, 현재 속도, 종료 버튼만** 둡니다. 처음부터 단순하게 만들어 주행 중 조작 부담을 줄입니다.
 
 ### A 완료 기준
 
@@ -212,14 +187,8 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 
 ### B-1. 입력과 출력
 
-```kotlin
-class TripAnalyzer(private val repo: TripRepository) {
-    suspend fun analyze(tripId: String): TripReport   // 이벤트·리포트 저장 후 반환
-}
-```
-
 - **순수 Kotlin**으로 작성해 PC 단위 테스트가 가능하게 합니다.
-- 속도가 `null`인 칸은 건너뜁니다(보간 안 함).
+- 속도가 `null`인 칸은 건너뜀.
 
 ### B-2. 감지 규칙 (속도만 사용)
 
@@ -242,7 +211,7 @@ class TripAnalyzer(private val repo: TripRepository) {
 
 ### B-4. 리포트 문장 (`ReportBuilder`)
 
-템플릿 기반, 문장은 `strings.xml`에 둡니다.
+템플릿 기반으로 llm으로 생성
 
 - **메모가 있으면 맨 위**에 시각과 함께 표시: "14:32 — '비보호 좌회전 어려웠어'"
 - **한 줄 요약**: 낮은 점수 기술 기준. 예) "전반적으로 안정적이었어요. 오늘은 **감속**을 연습해 봐요."
@@ -265,16 +234,15 @@ class TripAnalyzer(private val repo: TripRepository) {
 
 ## 4. 파트 C: 연습 퀘스트
 
-**목표:** 최근 주행에서 반복되는 약점을 찾아 연습 과제 2~3개를 보여 주고 진행을 표시합니다.
+**목표:** 주행에서 반복되었던 약점을 찾아 연습 과제 생성을 위한 데이터 제공
 
 ### C-1. 약점 판단 + 퀘스트 선택 (`QuestEngine`)
 
-- 입력: 최근 **5회** 리포트의 점수 + 누적 메모 분류
+- 입력: 최근 **5회** 리포트의 점수 + 누적 메모 분류, 가장 최근 주행에 가중치 크게 두기
 - 약점 조건: 기술 평균 점수 < 70 **또는** 같은 분류의 메모가 2건 이상
-- 약점 순서대로 카탈로그에서 퀘스트를 골라 **ACTIVE 최대 3개**를 유지합니다.
-- 주행이 1~2회뿐이면 메모 기반 퀘스트만 냅니다.
+- 주행이 1~2회뿐이면 메모 기반 퀘스트만?
 
-### C-2. 퀘스트 카탈로그 (`QuestCatalog`, Kotlin 리스트)
+### C-2. 퀘스트 카탈로그 (`QuestCatalog`, Kotlin 리스트)(!!퀘스트 파트랑 협의 필요!!)
 
 | templateId | 약점 | 제목 | 유형 | 달성 조건 |
 |---|---|---|---|---|
@@ -284,17 +252,12 @@ class TripAnalyzer(private val repo: TripRepository) {
 | `Q_PARK_PRACTICE` | 메모 PARKING | 넓은 주차장에서 후면 주차 5번 | SELF_CHECK | "연습했어요" 5번 |
 | `Q_LANE_PRACTICE` | 메모 LANE_CHANGE | 한산한 도로에서 차선 변경 5번 | SELF_CHECK | "연습했어요" 5번 |
 
-- 각 퀘스트의 `reason`에 근거를 넣습니다. 예) "최근 5번 중 급감속이 평균 4번 있었어요."
+- 각 퀘스트의 `reason`에 근거를 넣기. 예) "최근 5번 중 급감속이 평균 4번 있었어요."
 
 ### C-3. 진행
 
 - **AUTO**: 새 리포트가 생길 때마다 조건을 검사해 `progress`를 올리고, 달성하면 `DONE`.
-- **SELF_CHECK**: 퀘스트 화면의 "연습했어요" 버튼으로 +1. (정차 중에만 여는 화면이므로 별도 제한 없음)
-
-### C-4. 퀘스트 화면 (`QuestScreen`)
-
-- 진행 중 퀘스트 카드: 제목, 이유, 진행 막대(`progress / target`), SELF_CHECK이면 체크 버튼
-- 완료한 퀘스트 목록
+- **SELF_CHECK**: 퀘스트 화면의 "연습했어요" 버튼으로 +1. (정차 중에만 여는 화면이므로)
 
 ### C 완료 기준
 
@@ -335,18 +298,3 @@ class TripAnalyzer(private val repo: TripRepository) {
 | 퀘스트 만료(14일)·재출제 금지(7일)·기술 졸업 | 데모 기간에는 효과가 드러나지 않음 | — |
 | `quests.json` 외부 데이터화, NaviHelper 연습 장소 안내 | 부가 기능 | — |
 | 휴대폰 연동, 지도 표시, LLM 문장 다듬기 | 범위 밖 | 서버 / 지도 SDK |
-
-### 열린 질문
-
-| 질문 | 누구에게 | 영향 |
-|---|---|---|
-| 공모전 앱에 `CAR_SPEED`, `STT_SERVICE` 권한이 허용되는가 | 주최 측 | A |
-| Pleos 에뮬레이터에서 속도 값을 바꿀 수 있는가 | 직접 확인 (V1) | 실시간 시연 여부 |
-
----
-
-### 참고 자료
-
-- [SpeechToText](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/SpeechToText/intro) · [Result listeners](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/SpeechToText/result-listeners)
-- [Android `PERF_VEHICLE_SPEED`](https://developer.android.com/reference/android/car/VehiclePropertyIds#PERF_VEHICLE_SPEED)
-- [Vehicle SDK](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/Vehicle/intro) (생략한 기능을 다시 넣을 때)
