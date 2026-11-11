@@ -15,6 +15,7 @@ android {
         targetSdk = 34
         versionCode = 2
         versionName = "0.2.0"
+        testInstrumentationRunner = "com.hmgchallenge.pleosstarter.quests.QuestSmokeInstrumentation"
     }
 
     compileOptions {
