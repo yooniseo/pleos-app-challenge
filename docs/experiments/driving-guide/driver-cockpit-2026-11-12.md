@@ -87,3 +87,17 @@ adb -s emulator-5574 shell am instrument --user 10 -w -r -e cockpit_probe 1 com.
 ```
 
 바탕화면 `output/map-vehicle-integration-2026-11-12`에 `cockpit-proof.json`과 화면을 저장했다. 기본 내비의 흰 배경, 참고 경로와 OEM 경로의 차이, 휴대폰 미구현 등은 [지도/기획 비교](map-vehicle-2026-11-12.md)를 참고한다.
+
+## Figma 지도 UI 적용
+
+Figma `Sqpacf0pJmLc2RNnZBUrqo`, `73:10511`을 기준으로 기본 시뮬레이터 화면을 지도 중심으로 바꿨다. 초록 회전 카드, 다음 진행 카드, 차로 화살표, 파란 현재 위치, 하단 목적지 영역과 Asta Sans를 네이티브로 구현했다. Figma 원본 SVG와 현재 위치 PNG를 로컬 자산으로 사용한다. 컴포넌트 PNG 내보내기에 회색 배경이 포함돼 원본 SVG를 AndroidSVG 1.4로 렌더링했다. 지도·경로·거리·현재 속도·차로는 동적 데이터이며 정적인 화면 캡처를 앱 배경으로 쓰지 않는다.
+
+- 지도는 OpenStreetMap 타일과 기존 캐시 로더를 재사용한다. CARTO Voyager 공개 주소는 이 환경에서 API KEY REQUIRED 이미지를 반환해 사용하지 않는다. 지도 위에 OSM 저작자 표시를 유지한다.
+- 경기대 후문 인근 창룡대로 → 대학로의 OSRM 경로 192.2m를 로컬 fixture로 보관한다. 실제 도로 형상을 따라 표시하며 사용자의 GPS나 OEM 내비 경로라고 표현하지 않는다.
+- `NavigationSimulationRoute`는 기존 단계/조향 모델 진행도를 도로 경로에 대응시킨다. 차로 변경의 횡방향 오프셋과 파란 예상 경로가 함께 바뀐다. 회전 단계는 도로 곡선을 따라 위치와 방위각을 갱신한다. 이 대응은 시연용 투영이며 실차 주행 물리/차로 정밀 위치로 보정한 것이 아니다.
+- 지도 자동 시연은 본선부터 시작하며 가상 벨트/D단을 준비한다. 기존 출차 연습·창문·와이퍼·핸들·페달은 `운전 조작`에서 유지한다. `지도 보기`로 돌아오며 한 Activity의 상태를 공유한다. 지도 연습은 우회전용이고 기존 좌회전 조작 연습은 별도로 유지한다.
+- 현재/목표 차로와 남은 횟수, 정지선·가상 보행자 대기, 회전 안내, 기억/음성/퀘스트를 같은 모델에 연결한다. 실제 차로 인식으로 표현하지 않으며 화면에도 가상 3차로 연습으로 표시한다.
+- 디자인의 단속카메라/교통 혼잡 예시값은 실제 정보가 없어 노출하지 않는다. 해당 영역은 저속 연습 속도와 체험 진행률로 사용한다.
+- 단위 검사 83개 및 빌드/Lint 통과. `navigation_probe=1`: PASS_FIGMA_NAVIGATION. 실제 타일 표시, 차량 위치 이동, 1→2→3차로, 회전/완료, 일시정지 지도 고정, 조작판 왕복, 실제 SDK 속도 수신, 종료 후 P/0km/h 및 개인 프로필 유지 확인.
+
+자산 출처: [Figma UI](https://www.figma.com/design/Sqpacf0pJmLc2RNnZBUrqo?node-id=73-10511), [Asta Sans / OFL](https://github.com/42dot/Asta-Sans), [AndroidSVG / Apache 2.0](https://github.com/BigBadaboom/androidsvg), [OSRM](https://project-osrm.org/docs/v5.24.0/api/). 폰트와 렌더러의 라이선스 원문은 APK assets에 포함했다.

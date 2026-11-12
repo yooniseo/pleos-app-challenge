@@ -11,11 +11,11 @@ import java.util.concurrent.Executors
 import kotlin.math.*
 
 /** Native raster map: requests only visible tiles, identifies the app, caches and attributes OSM. */
-class CoachMapView(context: Context,private val tileTemplate: String="https://tile.openstreetmap.org/{z}/{x}/{y}.png") : View(context) {
+class CoachMapView(context: Context,private val tileTemplate: String="https://tile.openstreetmap.org/{z}/{x}/{y}.png",private val navigationStyle: Boolean=false) : View(context) {
     private data class Tile(val zoom: Int,val x: Int,val y: Int) {val id get()="$zoom-$x-$y"}
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
     private var worker=Executors.newFixedThreadPool(2)
-    private val directory=File(context.cacheDir,"osm-tiles").apply {mkdirs()}
+    private val directory=File(context.cacheDir,if(navigationStyle)"navigation-osm-v1" else "osm-tiles").apply {mkdirs()}
     private val tiles=linkedMapOf<String,Bitmap>()
     private val pending=mutableSetOf<String>()
     private val failed=mutableSetOf<String>()
@@ -32,6 +32,15 @@ class CoachMapView(context: Context,private val tileTemplate: String="https://ti
     fun diagnostics()=mapOf("visibleTiles" to visibleTileCount.toString(),"routePoints" to (route?.points?.size ?: 0).toString(),
         "progress" to progress.toString(),"marker" to (marker?.let {"${it.latitude},${it.longitude}"} ?: ""),
         "attached" to isAttachedToWindow.toString(),"closed" to closed.toString(),"size" to "${width}x$height")
+    private var navigationFrame: NavigationSimulationFrame?=null
+    private var cameraBearing=0.0
+    private val markerArt by lazy {BitmapFactory.decodeStream(context.assets.open("figma_navigation/a2bc5.png"))}
+    fun setNavigationFrame(value: ReferenceRoute,frame: NavigationSimulationFrame) {
+        route=value;navigationFrame=frame;progress=frame.distance/value.distanceMeters
+        marker=frame.position;heading=frame.bearing;center=frame.position;zoom=19
+        cameraBearing=NavigationSimulationRoute(value.points).bearing(0.0)
+        invalidate()
+    }
     var onMapStatus: (String)->Unit={}
     init {contentDescription="OpenStreetMap 실지도와 경로 미리보기. 현재 차로를 자동으로 인식하지 않아요."}
     fun setPosition(point: GeoPoint,bearing: Double=0.0,follow: Boolean=true) {
@@ -63,15 +72,22 @@ class CoachMapView(context: Context,private val tileTemplate: String="https://ti
         center=GeoPoint((value.points.minOf {it.latitude}+value.points.maxOf {it.latitude})/2,
             (value.points.minOf {it.longitude}+value.points.maxOf {it.longitude})/2)
     }
-    override fun onSizeChanged(w: Int,h: Int,oldw: Int,oldh: Int) {super.onSizeChanged(w,h,oldw,oldh);route?.let(::fit)}
+    override fun onSizeChanged(w: Int,h: Int,oldw: Int,oldh: Int) {super.onSizeChanged(w,h,oldw,oldh);if(!navigationStyle)route?.let(::fit)}
     fun retry() {failed.clear();invalidate()}
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawColor(Color.rgb(229,235,230))
         val origin=WebMercator.project(center,zoom)
-        val left=origin.x-width/2.0;val top=origin.y-height/2.0
-        val tileMinX=floor(left/256).toInt();val tileMaxX=floor((left+width)/256).toInt()
-        val tileMinY=floor(top/256).toInt();val tileMaxY=floor((top+height)/256).toInt()
+        val anchorX=width*0.50;val anchorY=if(navigationStyle)height*0.67 else height*0.5
+        val left=origin.x-anchorX;val top=origin.y-anchorY
+        val angle=Math.toRadians(cameraBearing)
+        val corners=if(navigationStyle)listOf(0.0 to 0.0,width.toDouble() to 0.0,0.0 to height.toDouble(),width.toDouble() to height.toDouble()).map {(x,y)->
+            val dx=x-anchorX;val dy=y-anchorY
+            MapPixel(anchorX+dx*cos(angle)-dy*sin(angle),anchorY+dx*sin(angle)+dy*cos(angle))
+        }else listOf(MapPixel(0.0,0.0),MapPixel(width.toDouble(),height.toDouble()))
+        if(navigationStyle){canvas.save();canvas.rotate(-cameraBearing.toFloat(),anchorX.toFloat(),anchorY.toFloat())}
+        val tileMinX=floor((left+corners.minOf {it.x})/256).toInt();val tileMaxX=floor((left+corners.maxOf {it.x})/256).toInt()
+        val tileMinY=floor((top+corners.minOf {it.y})/256).toInt();val tileMaxY=floor((top+corners.maxOf {it.y})/256).toInt()
         visibleTileCount=0
         for(x in tileMinX..tileMaxX) for(y in tileMinY..tileMaxY) {
             if(x<0 || y<0 || x>=1.shl(zoom) || y>=1.shl(zoom)) continue
@@ -86,19 +102,36 @@ class CoachMapView(context: Context,private val tileTemplate: String="https://ti
             val path=Path();value.points.forEachIndexed {i,p->val pos=point(p);if(i==0)path.moveTo(pos.x,pos.y) else path.lineTo(pos.x,pos.y)}
             paint.style=Paint.Style.STROKE;paint.strokeJoin=Paint.Join.ROUND;paint.strokeCap=Paint.Cap.ROUND
             paint.color=Color.WHITE;paint.strokeWidth=13f;canvas.drawPath(path,paint)
-            paint.color=Color.rgb(0,140,119);paint.strokeWidth=8f;canvas.drawPath(path,paint);paint.style=Paint.Style.FILL
+            paint.color=if(navigationStyle)Color.rgb(135,139,148)else Color.rgb(0,140,119);paint.strokeWidth=if(navigationStyle)18f else 8f;canvas.drawPath(path,paint)
+            navigationFrame?.let {frame->
+                val active=Path();frame.planned.forEachIndexed {i,p->val pos=point(p);if(i==0)active.moveTo(pos.x,pos.y)else active.lineTo(pos.x,pos.y)}
+                paint.color=Color.WHITE;paint.strokeWidth=25f;canvas.drawPath(active,paint)
+                paint.color=Color.rgb(67,102,245);paint.strokeWidth=17f;canvas.drawPath(active,paint)
+                val turn=point(NavigationSimulationRoute(value.points).at(NavigationSimulationRoute(value.points).turnDistance))
+                paint.style=Paint.Style.FILL;paint.color=Color.WHITE;canvas.drawCircle(turn.x,turn.y,16f,paint)
+                paint.color=Color.rgb(255,194,36);canvas.drawCircle(turn.x,turn.y,12f,paint)
+            }
+            paint.style=Paint.Style.FILL
             val end=point(value.points.last());paint.color=Color.rgb(244,112,72);canvas.drawCircle(end.x,end.y,10f,paint)
         }
         marker?.let {value->
-            val pos=point(value);paint.color=Color.WHITE;canvas.drawCircle(pos.x,pos.y,17f,paint)
+            val pos=point(value);if(navigationStyle) {
+                canvas.save();canvas.rotate(heading.toFloat(),pos.x,pos.y)
+                val w=width*0.065f;val h=w*markerArt.height/markerArt.width
+                canvas.drawBitmap(markerArt,null,RectF(pos.x-w/2,pos.y-h/2,pos.x+w/2,pos.y+h/2),paint);canvas.restore()
+                return@let
+            }
+            paint.color=Color.WHITE;canvas.drawCircle(pos.x,pos.y,17f,paint)
             canvas.save();canvas.rotate(heading.toFloat(),pos.x,pos.y)
             val arrow=Path().apply {moveTo(pos.x,pos.y-16);lineTo(pos.x+11,pos.y+12);lineTo(pos.x,pos.y+6);lineTo(pos.x-11,pos.y+12);close()}
             paint.color=Color.rgb(0,139,124);canvas.drawPath(arrow,paint);canvas.restore()
         }
+        if(navigationStyle)canvas.restore()
         val density=resources.displayMetrics.density
-        paint.color=Color.argb(225,255,255,255);canvas.drawRect(0f,height-27*density,width.toFloat(),height.toFloat(),paint)
+        val attributionY=if(navigationStyle)height*0.80f else height-8*density
+        paint.color=Color.argb(225,255,255,255);canvas.drawRect(0f,attributionY-18*density,if(navigationStyle)width*0.36f else width.toFloat(),attributionY+5*density,paint)
         paint.color=Color.rgb(34,60,49);paint.textSize=12*density
-        canvas.drawText("© OpenStreetMap contributors · 참고 경로 OSRM",8*density,height-8*density,paint)
+        canvas.drawText(if(navigationStyle)"© OpenStreetMap contributors · OSRM · 가상 위치" else "© OpenStreetMap contributors · 참고 경로 OSRM",8*density,attributionY,paint)
         if(tiles.isEmpty()) {
             paint.textSize=14*density;paint.color=Color.rgb(45,65,55)
             canvas.drawText(if(failed.isEmpty()) "지도를 불러오고 있어요" else "지도 연결을 확인한 뒤 다시 불러와 주세요",12*density,25*density,paint)
@@ -134,7 +167,7 @@ class CoachMapView(context: Context,private val tileTemplate: String="https://ti
                 pending.remove(tile.id)
                 result.onSuccess {bitmap->
                     tiles[tile.id]=bitmap
-                    while(tiles.size>48) {val first=tiles.keys.first();tiles.remove(first)?.recycle()}
+                    while(tiles.size>(if(navigationStyle)192 else 48)) {val first=tiles.keys.first();tiles.remove(first)?.recycle()}
                     onMapStatus("실지도 표시됨")
                 }.onFailure {failed.add(tile.id);onMapStatus("지도 연결 제한 · 다시 불러오기를 눌러 주세요")}
                 invalidate()

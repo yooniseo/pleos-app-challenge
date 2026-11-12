@@ -85,6 +85,14 @@ class DrivingSimulator(val turnRight: Boolean=true,val laneRight: Boolean=turnRi
     fun setSignal(value: SimSignal) {if(signal!=value)mirrorChecked=false;signal=value}
     fun checkMirrors() {mirrorChecked=true;feedback="미러·사각지대를 직접 확인한 체험 입력을 기록했어요."}
     fun freeze() {accelerator=0.0;brake=100.0;speed=0.0}
+    /** Navigation lesson starts on the carriageway; the cockpit retains the parking lesson. */
+    fun startRoadPractice() {
+        require(stage==SimStage.PREPARE)
+        belt=true;parkingBrake=false;gear=SimGear.D;brake=80.0
+        x=road.entryLaneEnd.x;y=road.laneY(currentLane);heading=PI/2
+        trace.clear();trace.add(SimPose(x,y,heading));enter(SimStage.LANE_PREPARE)
+        feedback="본선 ${currentLane}차로에서 시작해요. 한 차로씩 이동해 회전 차로를 준비해요."
+    }
     private fun enter(value: SimStage) {
         stage=value;stageDistance=distance;mirrorChecked=false
         val here=RoadPoint(x,y)

@@ -15,7 +15,8 @@ import java.net.URL
 /** Touch controls -> Virtual Console state -> actual speed/blinker SDK callbacks. Emulator only. */
 open class CockpitSmokeRunner : Instrumentation() {
     private var automaticProbe=false
-    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);automaticProbe=arguments?.getString("auto_probe")=="1"}
+    private var navigationProbe=false
+    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);automaticProbe=arguments?.getString("auto_probe")=="1";navigationProbe=arguments?.getString("navigation_probe")=="1"}
     override fun runOnMainSync(runner: Runnable) {
         // Keep test assertion failures on the instrumentation thread so finally restores user data.
         var failure: Throwable?=null
@@ -44,7 +45,9 @@ open class CockpitSmokeRunner : Instrumentation() {
                 taskRoot=tasks.first {it.taskInfo.taskId==a.taskId}.taskInfo.baseActivity?.className.orEmpty()
             }
             check(taskRoot==DrivingSimulatorActivity::class.java.name) {"Cockpit inherited a parked-only task root: $taskRoot"}
+            if(!navigationProbe)click(a,"nav_controls")
             runOnMainSync {
+                if(navigationProbe)return@runOnMainSync
                 val coach=a.window.decorView.findViewWithTag<android.view.View>("training_coach_panel")
                 val controls=a.window.decorView.findViewWithTag<android.view.View>("training_controls_panel")
                 val left=android.graphics.Rect();val right=android.graphics.Rect()
@@ -52,16 +55,17 @@ open class CockpitSmokeRunner : Instrumentation() {
                 if(a.resources.configuration.screenWidthDp>=760)check(left.right<=right.left) {"Coach and controls overlap"}
             }
             capture("cockpit-ready.png")
-            if(automaticProbe) {
-                val proof=runAutomaticPlayback(a)
+            if(automaticProbe || navigationProbe) {
+                val proof=if(navigationProbe)runNavigationPlayback(a) else runAutomaticPlayback(a)
                 runOnMainSync {a.finish()};Thread.sleep(2_500)
                 val after=consoleState()
                 check(after.getJSONObject("controls").getInt("speed_kph")==0)
                 check(after.getJSONObject("gear").getJSONObject("actual").getString("value")=="Park")
                 check(QuestStore(targetContext,false).load()==personal)
-                proof.put("after",after);proof.put("result","PASS_AUTO_PLAYBACK")
-                File(targetContext.filesDir,"auto-playback-proof.json").writeText(proof.toString(2))
-                result.putString("result","PASS_AUTO_PLAYBACK")
+                val status=if(navigationProbe)"PASS_FIGMA_NAVIGATION" else "PASS_AUTO_PLAYBACK"
+                proof.put("after",after);proof.put("result",status)
+                File(targetContext.filesDir,if(navigationProbe)"figma-navigation-proof.json" else "auto-playback-proof.json").writeText(proof.toString(2))
+                result.putString("result",status)
             } else {
             click(a,"sim_brake");Thread.sleep(250)
             runOnMainSync {check(a.simulatorForDiagnostics().brake==80.0)}
@@ -150,6 +154,51 @@ open class CockpitSmokeRunner : Instrumentation() {
             simulatorPrefs.edit().apply {if(priorReport==null)remove("last_report")else putString("last_report",priorReport)}.commit()
         }
         finish(code,result)
+    }
+    private fun runNavigationPlayback(a: DrivingSimulatorActivity): JSONObject {
+        val deadline=android.os.SystemClock.elapsedRealtime()+180_000
+        var ready=false
+        while(!ready && android.os.SystemClock.elapsedRealtime()<deadline) {
+            runOnMainSync {ready=(a.navigationForDiagnostics()["visibleTiles"]?.toIntOrNull() ?: 0)>8}
+            if(!ready)Thread.sleep(300)
+        }
+        check(ready) {"Navigation tiles did not load"};capture("figma-navigation-ready.png")
+        click(a,"nav_auto")
+        val states=mutableListOf<JSONObject>();val seen=mutableSetOf<SimStage>();val lanes=mutableSetOf<Int>()
+        var complete=false;var firstMarker="";var endMarker="";var pausedMarker="";var maxSpeed=0f
+        do {
+            var stage=SimStage.PREPARE;var data=emptyMap<String,String>()
+            runOnMainSync {
+                val m=a.simulatorForDiagnostics();stage=m.stage;data=a.navigationForDiagnostics()
+                lanes.add(m.currentLane);maxSpeed=maxOf(maxSpeed,a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f)
+                check(a.window.decorView.findViewWithTag<android.view.View>("navigation_panel").isShown)
+                check(!a.pausedForDiagnostics())
+            }
+            if(firstMarker.isBlank())firstMarker=data.getValue("marker")
+            endMarker=data.getValue("marker")
+            if(seen.add(stage)) {
+                states.add(JSONObject(data))
+                if(stage in setOf(SimStage.LANE_OUT,SimStage.TURN_CHECK,SimStage.TURN,SimStage.COMPLETE))capture("figma-navigation-${stage.name.lowercase()}.png")
+                if(stage==SimStage.LANE_RETURN) {
+                    click(a,"nav_pause")
+                    runOnMainSync {check(a.pausedForDiagnostics());pausedMarker=a.navigationForDiagnostics().getValue("marker")}
+                    Thread.sleep(400)
+                    runOnMainSync {check(a.navigationForDiagnostics().getValue("marker")==pausedMarker)}
+                    click(a,"nav_pause")
+                }
+            }
+            complete=stage==SimStage.COMPLETE
+            if(!complete)Thread.sleep(250)
+        }while(!complete && android.os.SystemClock.elapsedRealtime()<deadline)
+        check(complete && lanes==setOf(1,2,3));check(firstMarker!=endMarker);check(maxSpeed>0)
+        click(a,"nav_controls")
+        runOnMainSync {check(a.window.decorView.findViewWithTag<android.view.View>("training_controls_panel").isShown)}
+        click(a,"sim_navigation")
+        runOnMainSync {check(a.window.decorView.findViewWithTag<android.view.View>("navigation_panel").isShown)}
+        return JSONObject().apply {
+            put("complete",complete);put("lanes",org.json.JSONArray(lanes.sorted()));put("states",org.json.JSONArray(states))
+            put("firstMarker",firstMarker);put("endMarker",endMarker);put("pauseFreezesMap",true);put("controlsRoundTrip",true);put("maxActualSdkSpeedMps",maxSpeed)
+        }
     }
     private fun runAutomaticPlayback(a: DrivingSimulatorActivity): JSONObject {
         click(a,"sim_auto")

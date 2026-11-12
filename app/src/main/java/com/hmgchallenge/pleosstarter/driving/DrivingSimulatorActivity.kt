@@ -35,6 +35,7 @@ class DrivingSimulatorActivity : Activity() {
     private val recorded=mutableSetOf<String>()
     private val mint=Color.rgb(101,233,197)
     private val muted=Color.rgb(180,199,209)
+    private lateinit var navigation: SimulatorNavigationView
     private lateinit var root: LinearLayout
     private lateinit var stateView: TextView
     private lateinit var controlsStateView: TextView
@@ -116,10 +117,31 @@ class DrivingSimulatorActivity : Activity() {
         root=LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(10),dp(18),dp(12));setBackgroundColor(Color.rgb(13,25,34))
         }
-        setContentView(root)
+        val layers=FrameLayout(this)
+        layers.addView(root,FrameLayout.LayoutParams(-1,-1))
+        navigation=SimulatorNavigationView(this)
+        layers.addView(navigation,FrameLayout.LayoutParams(-1,-1))
+        root.visibility=View.GONE
+        setContentView(layers)
+        navigation.onAutomatic={
+            if(automatic) {automatic=false;paused=true;model.freeze()}
+            else {reset(true,true);model.startRoadPractice();autoDriver=TrainingAutoDriver();automatic=true;paused=false}
+            render()
+        }
+        navigation.onPausePlayback={pauseButton.performClick()}
+        navigation.onControls={navigation.visibility=View.GONE;root.visibility=View.VISIBLE;render()}
+        navigation.onVoice={coachVoiceButton.performClick()}
+        navigation.onNote={root.findViewWithTag<Button>("sim_coach_note").performClick()}
+        navigation.onFeedback={showFeedback()}
+        navigation.onRestart={reset(true,true);model.startRoadPractice();render()}
+        navigation.onQuests={startActivity(Intent(this,com.hmgchallenge.pleosstarter.quests.QuestActivity::class.java).putExtra("quest_demo",true))}
         text(root,"주행 코치와 함께 운전해요",23f,mint)
         text(root,"시뮬레이션 · 왼쪽 안내를 보며 오른쪽에서 조작해요. 핸들 각도는 가상 차량·도로 기준입니다.",12f,muted)
         val header=row(root)
+        button(header,"지도 보기","sim_navigation") {
+            if(!model.turnRight){reset(true,true);model.startRoadPractice()}
+            root.visibility=View.GONE;navigation.visibility=View.VISIBLE;render()
+        }
         button(header,"체험 끝내기","sim_close") {finish()}
         button(header,"시나리오 선택","sim_scenario") {chooseScenario()}
         button(header,"처음부터","sim_restart") {reset(model.turnRight,model.laneRight)}
@@ -242,6 +264,7 @@ class DrivingSimulatorActivity : Activity() {
         if(!::wheel.isInitialized)return
         stageView.text=(if(paused)"일시정지 · " else if(automatic)"자동 시연 · " else "수동 운전 · ")+model.stage.title.replace("왼쪽",model.laneDirection)
         stageView.setTextColor(if(paused)Color.rgb(255,204,133) else muted)
+        navigation.render(model,paused,automatic,voiceEnabled)
         val cue=model.instruction()
         cueView.text=if(paused)"일시정지 중이에요. ‘계속하기’를 눌러 체험을 이어가요." else cue
         resumeRow.visibility=if(paused)View.VISIBLE else View.GONE
@@ -321,6 +344,7 @@ class DrivingSimulatorActivity : Activity() {
     private fun reportText()="체험 결과 · 실제 주행 성공 판정 아님\n\n"+model.practices.joinToString("\n") {"• ${it.message}"}+
         "\n\n현재 단계: ${model.stage.title}\n조작 거리 ${model.distance.roundToInt()}m · 남은 차로 ${model.lanesRemaining}개\n퀘스트의 체험 기록에 연결했어요."+
         if(coachNotes.isEmpty())"" else "\n\n기억한 순간\n"+coachNotes.joinToString("\n")
+    fun navigationForDiagnostics()=navigation.diagnostics()
     fun simulatorForDiagnostics()=model
     fun pausedForDiagnostics()=paused
     fun automaticForDiagnostics()=automatic

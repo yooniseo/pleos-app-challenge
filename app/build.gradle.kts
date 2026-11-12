@@ -26,6 +26,7 @@ android {
 }
 
 dependencies {
+    implementation("com.caverock:androidsvg-aar:1.4")
     implementation("ai.pleos.playground:Vehicle:2.3.2")
     implementation("ai.pleos.playground:NaviHelper:3.0.5")
     // Driving coach speech; ON_DEVICE avoids server registration and project secrets.
