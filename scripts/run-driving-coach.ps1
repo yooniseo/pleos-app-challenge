@@ -63,12 +63,11 @@ if($Mode -in @('Verify','Actions')) {
     if(!(($result -join "`n") -match 'result=PASS_(ACTUAL_CALLBACKS|DEMO_ACTIONS)')) {throw "Verification incomplete; inspect $output"}
 } elseif($Mode -eq 'Quests') {
     & $adb -s $serial shell am start --user $userId -W -n "$app/.quests.QuestActivity" --ez quest_demo true
+} elseif($Mode -eq 'Cockpit') {
+    & $adb -s $serial shell am start --user $userId -S -W -n "$app/.driving.DrivingCoachActivity" --ez live_mode false --ez open_cockpit true
 } else {
     $live=if($Mode -eq 'Live') {'true'} else {'false'}
     & $adb -s $serial shell am start --user $userId -S -W -n "$app/.driving.DrivingCoachActivity" --ez live_mode $live
-    if($Mode -eq 'Cockpit') {
-        & $adb -s $serial shell am start --user $userId -W -n "$app/.driving.DrivingCoachActivity" --ez live_mode false --ez open_cockpit true
-    }
 }
 Write-Host "Ready: $Mode on $serial. Virtual Console: http://127.0.0.1:8088/"
 Write-Host 'Open Virtual Console in a browser before changing emulated vehicle values.'
