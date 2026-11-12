@@ -56,6 +56,7 @@ object BeginnerScenarioCoach {
         return when {
             abs(angle)<10->"핸들을 가운데로 풀어 맞추세요"
             abs(angle)<=180->"핸들을 ${direction}으로 꺾으세요"
+            abs(angle) in 225..314->"${direction}으로 반 바퀴보다 조금 더 돌려주세요"
             else->"${direction}으로 ${turnAmount(angle)} 정도 돌려주세요"
         }
     }
@@ -65,7 +66,7 @@ object BeginnerScenarioCoach {
         in 10..49->"살짝"
         in 50..114->"1/4 바퀴"
         in 115..224->"반 바퀴"
-        in 225..314->"3/4 바퀴"
+        in 225..314->"조금 더"
         in 315..404->"한 바퀴"
         in 405..584->"한 바퀴 반"
         else->"두 바퀴"
