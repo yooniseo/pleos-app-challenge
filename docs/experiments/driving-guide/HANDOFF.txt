@@ -1,0 +1,247 @@
+집 PC 새 세션에 전달할 개발 컨텍스트
+작성: 2026-11-12, Asia/Seoul
+
+1. 지금 이어서 해야 하는 일
+
+사용자는 집 컴퓨터에서 이 작업을 계속하려고 한다. 새 세션에서는 이 문서를 먼저 읽고, 이미 만든 화면이나 퀘스트를 처음부터 다시 만들지 말고 Pleos 실제 SDK 값 수신 검증을 재개한다.
+
+최신 요청: “Pleos 실제 API 값 들어오는 것까지 제대로 확인해줘. main은 건드리지 말고 scratch/driving-guide에서만 수정하고.” 이후 현재 PC의 실행 환경 문제 때문에 “집에 컴퓨터 있음 거기서 할 거니까 프롬프트랑 세션 이동용 파일 만들어줘”, “컨텍스트 전달용으로 쓰게”라고 요청했다.
+
+실제 값 수신 검증은 아직 완료되지 않았다. 빌드 성공, 시뮬레이션 화면 성공, 초기화 요청 로그를 실제 값 수신 성공으로 표현하지 말 것. 새 PC에서 실제 SDK 콜백과 수신 값을 확인하고 근거를 남기는 것이 최우선이다.
+
+2. 프로젝트와 브랜치 — 번호 혼동을 절대 반복하지 말 것
+
+팀: 뿌까 / 프로젝트: 튜토리얼
+서비스: 초보 운전자가 단계별 도움을 받으며 독립 운전으로 나아가도록 동행하는 코치.
+
+Figma의 실제 담당 구분:
+  1번 = 퀘스트·성장·안내 설정                 → scratch/quests
+  2번 = 주행 후 피드백·기록·음성 메모          → scratch/gain
+  3번 = 초보자를 위한 쉬운 주행·주차 안내      → scratch/driving-guide (현재 작업)
+
+초기 대화의 번호 순서와 Figma의 번호가 달랐고, 앞선 구현에서 이를 혼동해 사용자가 강하게 정정했다. 지금 담당은 Figma 3번 주행·주차 코치다. 이미 구현한 퀘스트 코드는 삭제하지 않는다. 퀘스트는 연결 인터페이스만 준비하고, 퀘스트 화면/성장/동그라미 계산을 주행 코치에서 다시 구현하지 않는다.
+
+저장소: https://github.com/yooniseo/pleos-app-challenge (비공개)
+작업 브랜치: scratch/driving-guide
+main에 수정·병합·push 금지. 다른 팀 브랜치 수정·이름 변경·강제 push 금지.
+scratch/gain이 실제 2번 작업인 것을 파일과 커밋으로 확인했고 이름을 유지했다.
+
+기준으로 확인한 커밋:
+  main: c683e4146dd51491227fd15e61935178b3c03a78
+  보존된 scratch/quests: 5e577f84c6e840bcf9fbee3cce6af16a095252de
+  확인한 scratch/gain: fb6b4a7935cd0c64e5e710b832be5f7190e90605
+  주행·주차 코치 기본 구현: c988ede81b717fae9b1a6e376fd65be95c7406c6
+
+API 진단 및 이관 문서의 후속 커밋은 별도 “02_이관상태.json” 또는 집 PC의 git log로 확인한다. 위 기준 SHA로 다른 팀의 새 작업을 되돌리지 말 것.
+
+브랜치 규칙은 다음으로 읽었다:
+  git show origin/codex/team-conventions:CONTRIBUTING.md
+각 파트 실험은 해당 scratch 브랜치, 문서는 docs/experiments/driving-guide/ 아래. 규칙 브랜치를 자동 병합할 필요는 없다. main README의 오래된 일반 feature 브랜치 예시보다 위 팀 규칙과 사용자 지시를 우선했다.
+
+3. 현재 소스 구조와 구현 범위
+
+Kotlin 1.9.25 / AGP 8.1.4 / JDK 17 / compile·target SDK 34 / min SDK 28.
+네이티브 Android Views 앱이다. Compose, 웹, React 앱이 아니다.
+패키지: com.hmgchallenge.pleosstarter
+코치 Activity: com.hmgchallenge.pleosstarter.driving.DrivingCoachActivity
+기존 MainActivity.kt는 변경하지 않았다. 코치는 별도 런처로 추가했다.
+
+app/src/main/java/com/hmgchallenge/pleosstarter/driving/:
+  CoachContract.kt       — 상황/이벤트, 퀘스트·피드백 포트, 설정 경계
+  CoachEngine.kt         — 주행 안내 상태 머신, 요청 시 안내, 근거/취소/중복 처리
+  DrivingCoachActivity.kt— 주행/주차 UI, SDK 라이프사이클, 권한과 설정
+  CoachSceneView.kt      — 설명용 교차로·주차 도식
+  ParkingLesson.kt       — 후진·전면·평행 주차 학습 단계
+  CoachRepository.kt     — 로컬 JSONL 저널, 설정, 이벤트 재전달
+  PleosCoachSource.kt    — 실제 NaviHelper/Vehicle 호출 어댑터
+  PleosCoachVoice.kt     — 실제 Pleos ON_DEVICE TTS
+  CarDetailSource.kt     — AAOS 주행 제한 상태
+  RuntimeEvidence.kt     — SDK 콜백에서 수집하는 관측 및 실제 수신 검증 기준
+
+구현된 화면/동작:
+  - 설명용 교차로 그림, 지금 필요한 안내, 살펴볼 방향, 방향지시등 상태
+  - 다시 듣기, 음성 중단, 어려운 상황 메모
+  - 시뮬레이션 다음 장면/자동 재생/처음부터
+  - 주차 학습 5단계와 사용자 직접 확인용 하차 체크
+  - 영역별 자세히/간략히/요청 시 설정, 기본 음성 OFF
+  - 유효한 최근 속도 0과 UX 허용 상태를 확인해야 차량의 상세 학습/설정 진입
+
+검증 구분:
+  - 일반 API 34 Android 에뮬레이터에서 세로 및 1700×1184 가로 UI 스모크 테스트는 PASS.
+  - 단위테스트 총 26개: 코치 21 + 기존 속도 2 + 실제 수신 판정 3.
+  - 최종 빌드/단위테스트/Lint 결과는 이관상태 JSON을 확인한다.
+  - Pleos 실제 값 수신은 미검증. 단위 테스트와 데모 PASS가 이를 대신하지 않는다.
+
+실시간 센서 주차 조작 지시, 카메라 장애물/간격/시선 감지, 고정된 핸들 회전 수, 실제 차로 변경·회전 완료 자동 판정은 구현되지 않았다. 주차 도식은 학습 자료이고 실제 차량 위치를 추적하지 않는다. 기어 P/주차 브레이크 체크도 사용자 확인이며 자동 센서 확인이 아니다.
+
+4. 확정한 시나리오와 파트 연결
+
+같은 하나의 교차로에서:
+  우회전을 위한 오른쪽 차로 변경 준비 → 우회전 → 그 교차로 빠져나오기
+
+우회전 후 별도의 다음 교차로를 직진 통과하는 시나리오가 아니다. 4차선(차로 수)을 4지 교차로(형태)로 임의 해석하지 않는다.
+
+세 단계는 같은 situationInstanceId를 공유한다. tripId, eventId, situationType, eventType, timestamp, source, assistanceUsed, guidanceLevel을 함께 전달한다. DEMO와 실제 SDK 관측을 구분한다. 방향지시등 점등이나 안내 표시만으로 퀘스트 완료 동그라미를 채우지 않는다.
+
+동그라미는 단계별 퀘스트 완료 정도이며 퀘스트 파트가 소유한다.
+CoachHostBindings로 공통 tripId, QuestCoachPort, FeedbackCoachPort를 설치한다.
+안내 수준은 퀘스트 쪽에서 받아 적용할 수 있고 refreshPreferencesFromHost()로 갱신한다.
+피드백 메모는 gain 계획의 DrivingNote(noteId, tripId, t, rawText, category)에 맞춘 FeedbackNoteDraft를 제공한다.
+
+scratch/gain은 docs/driving-feedback-plan.md와 SttProbe.kt 등 사전 검증 코드가 있는 상태였다. Room/TripRepository/회고 화면이 완성돼 있다고 가정하지 않는다. gain을 병합하거나 이름을 바꾸지 않았다. 최종 STT 문장은 handleCoachCommand(text)로 연결 가능하다. 이 브랜치는 마이크를 중복으로 열지 않는다.
+
+실제 내비는 다음 TURN_RIGHT가 300m 안이면 준비, 80m 안이면 우회전 지점 안내로 바뀐다. 수치는 프로토타입 정책이고 최적/안전 타이밍으로 검증되지 않았다. 단계 안내 전환은 실제 수행 완료 판정이 아니다. VerifiedManeuver는 검증된 공급자를 나중에 붙일 경계이며 기본 SDK 어댑터가 성공 데이터를 만들지 않는다.
+
+5. 정확한 SDK와 한계
+
+Vehicle 2.3.2:
+  Vehicle.initialize()
+  getTurnSignal().checkTurnSignalStateCapabilities
+  getCurrentTurnSignalState
+  registerTurnSignalState / unregisterTurnSignalState
+  권한 pleos.car.permission.CAR_LIGHTS
+  READ 또는 READ_WRITE 지원을 확인한 뒤 OFF/RIGHT/LEFT/null 수신.
+  공개 TurnSignal setter가 없다. 실제 자동 깜빡이를 구현했다고 하지 말 것.
+  자동 점등 옵션은 DEMO 그림에만 적용한다. 제조사 전용 권한을 우회하지 않는다.
+
+NaviHelper 3.0.5 / navi-data 3.0.4:
+  initialize 연결 후 addListener, getTBTInfo, getCurrentLocationInfo
+  onTBTInfo(List<TBTInfo>)의 TBTInfo는 type, distance(미터), description.
+  현재 차로·안전한 간격·보행자·신호등·고유 maneuver ID를 제공하지 않는다.
+  CurrentLocationInfo.routeId 변화와 재탐색/취소/목적지 변경으로 기존 안내 무효화.
+  get*Info 권한 pleos.car.permission.NAVI_ROUTE.
+  앱에서 실제 내비 화면 열기는 기존 NAVI_CUSTOM_MAP.
+  경로 시작 요청은 NAVI_ROUTE_SEARCH. 현재 코치는 사용자의 경로를 임의 변경하지 않는다.
+
+TextToSpeech 3.3.1:
+  ai.pleos.playground.tts.TextToSpeech(context, Mode.ON_DEVICE)
+  initialize → addEventListener → setLocale(Locale.KOREA) → speak/stop → remove/release
+  권한 pleos.car.permission.TTS_SERVICE
+  ON_DEVICE는 공식 문서상 서버 앱 등록/키 불필요. 실제 서비스·언어 지원은 집 PC에서 확인해야 한다.
+  일반 Android TTS가 아니다. onStart와 onDone을 받아야 재생 완료로 인정한다.
+
+속도:
+  기존 SpeedSource의 AAOS CarPropertyManager PERF_VEHICLE_SPEED.
+  android.car.permission.CAR_SPEED 런타임 권한을 확인한다.
+  null/NaN을 0으로 대체하지 않는다. m/s와 km/h 변환을 혼동하지 않는다.
+
+공식 참고:
+  https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/Vehicle/vehicle/ai.pleos.playground.vehicle.api/turn-signal/entry
+  https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/event-listeners
+  https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/TextToSpeech/intro
+  https://document.pleos.ai/en/docs/connect/guide/getting-started/application-development/setup-connect-sdk-emulator
+  https://document.pleos.ai/en/docs/pleos-only/app-test-guide/virtual-console-guide
+
+6. 현재 PC에서 무엇을 실제로 확인했는가
+
+원래 저장소 경로: C:\Users\kim\Projects\pleos-app-challenge
+사용자 작업 공간: C:\Users\kim\Desktop\현대차 공모전
+집 PC에서 이 절대경로가 존재한다고 가정하지 않는다.
+
+기존 Pleos 2.1 이미지와 AVD는 D: USB 드라이브에 있었다. PC RAM은 약 8GB.
+원본 AVD를 지우지 않고 app/build/pleos-runtime 아래 SSD 복사본과 초기화된 테스트 데이터를 만들었다. 시스템 이미지 원본과 복사본 SHA-256 일치도 확인했다.
+  cdb8f0d23043eb5a42cfe0ec7cd2105d5a92a19c8d2beee3fad15c0992e19769
+
+RAM 4GB, 빌드와 분리 실행, 소프트웨어/하드웨어 그래픽, 새 AVD 데이터와 오디오 정상 지원 등을 시도했다. 부팅 완료(sys.boot_completed=1), ADB 인증, 새 앱 APK 설치 Success, 코치 프로세스 실행까지 확인했다.
+
+하지만 다음 문제가 남았다:
+  - 차량 HAL/ADAS/placesense 등 기본 서비스가 앱 설치 전부터 반복 SIGABRT.
+  - Virtual Console /vehicle/state의 gear.bridge_ready=false, controls.dds_ready=false.
+  - 공식 Turn Signal State 쓰기 엔드포인트가 HTTP 503 Service Unavailable 반환.
+  - 일부 시도는 package/activity 서비스 Broken pipe, system provider 설치 전 오류.
+  - audioserver 정책 등록 타임아웃과 하드웨어 서비스 연결 오류도 관찰.
+  - 소프트웨어 그래픽 실행은 호스트 가상 메모리 여유 부족으로 보호 장치가 종료.
+  - 테스트 APK 설치/계측 실행이 정상 완료되지 않아 실제 수신 검증 JSON을 얻지 못했다.
+
+코치 프로세스의 SDK 로그에서 getCapabilityConfig request와 Pleos TTS initialize ON_DEVICE 요청은 확인했다. 이후 onStop으로 구독/연결이 해제됐다. 속도 권한 화면이 뜨며 중지되는 흐름도 관찰했다. 요청 로그를 응답 성공으로 해석하지 말 것.
+
+현재 PC의 실패를 앱 구현 탓이나 RAM 탓 하나로 단정하지 않는다. 정상 Pleos 환경에서 재검증해야 한다. 이번 작업이 띄운 에뮬레이터는 종료했다. 사용자 원본 AVD와 SDK는 보존했다.
+
+7. 집 PC에서 권장 재개 순서
+
+가. 저장소와 브랜치 확인
+  git status --short --branch
+  git fetch origin
+  git switch scratch/driving-guide
+  git pull --ff-only origin scratch/driving-guide
+
+기존 작업이 있으면 버리지 말고 먼저 보존한다. main이나 다른 팀 브랜치에 덮어쓰지 않는다. 같은 변경이 이미 Git에 있으면 백업 patch를 다시 적용하지 않는다.
+
+나. 프로젝트 안내와 팀 규칙 읽기
+  docs/experiments/driving-guide/README.md
+  docs/experiments/driving-guide/runtime-probe.md
+  docs/experiments/driving-guide/validation.md (초기 검증의 역사 기록)
+  git show origin/codex/team-conventions:CONTRIBUTING.md
+
+다. 집 PC 환경 먼저 점검
+  - JDK 17, Android SDK 34, 공식 Pleos Connect 2.1 에뮬레이터.
+  - 공식 가이드의 Cold boot / 게스트 RAM 4GB, SSD 사용.
+  - Android Studio와 에뮬레이터 동시 실행의 공식 Windows 최소 RAM은 16GB. 실제 문제 원인을 이 숫자 하나로 단정하지 말 것.
+  - 기본 서비스가 정상인 전용 테스트 AVD를 사용한다. 다른 사람의 AVD 데이터를 지우지 않는다.
+  - Mac이면 해당 아키텍처의 공식 이미지를 사용한다. 이관 묶음에 Windows SDK 이미지나 AVD는 포함하지 않는다.
+
+라. 빌드
+PowerShell 예시(JAVA_HOME은 집 PC 경로에 맞출 것):
+  .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebugAndroidTest --console=plain --max-workers=1
+
+메모리가 작으면 빌드와 에뮬레이터를 동시에 실행하지 않는다.
+PowerShell에서 -D/-P 옵션에 점이 들어가면 전체 옵션 문자열을 따옴표로 감싼다. 이전에 따옴표 없는 옵션이 잘려 Gradle의 “Task '.compiler.execution.strategy=in-process' not found”가 난 적이 있다. 코드 컴파일 오류가 아니라 명령 인자 문제였다.
+
+마. 실제 SDK 검증
+  adb devices
+  adb -s <serial> shell getprop sys.boot_completed
+  adb -s <serial> shell am get-current-user
+  adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
+  adb -s <serial> install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+기존 앱과 APK 서명이 다르면 앱을 임의 삭제하지 말고 전용 AVD를 이용한다.
+AAOS는 현재 사용자가 10일 수 있으므로 아래 userId를 실제 값으로 바꾼다.
+  adb -s <serial> shell pm grant --user <userId> com.hmgchallenge.pleosstarter android.car.permission.CAR_SPEED
+  adb -s <serial> shell am instrument --user <userId> -w -r -e live_probe 1 -e strict_live 1 -e seconds 120 com.hmgchallenge.pleosstarter.test/com.hmgchallenge.pleosstarter.driving.CoachSmokeRunner
+
+현재 러너는 디버그 에뮬레이터를 대상으로 한다. 실차/DevBox에서 자동 테스트 문장을 임의 실행하도록 제한을 해제하지 않는다.
+
+바. 입력과 결과를 대조
+  - Virtual Console은 adb forward tcp:8088 tcp:8088 후 http://127.0.0.1:8088/.
+  - Convenience → Turn Signal State를 Off → BlinkRight → Off로 변경하고 SDK GET/SUBSCRIPTION이 따라오는지 확인한다.
+  - 유효한 속도 값과 실제 내비 경로의 TBT가 필요하다. 내비 안내를 시작하지 않아 빈 목록이면 TBT 성공으로 세지 않는다.
+  - 앱 내부 데모, Virtual Console의 기본 표시 0, 단순 연결 성공을 실제 수신으로 대신하지 않는다.
+
+결과 수집(러너가 실행됐을 때):
+  adb -s <serial> shell run-as com.hmgchallenge.pleosstarter --user <userId> cat files/pleos-runtime-proof.json
+
+user 10 외부 저장소는 shell에서 Permission denied가 날 수 있다. 내부 파일을 run-as로 읽는다. 앱은 디버그 빌드여야 한다.
+
+strict_live 전체 통과에는 다음이 모두 필요하다:
+  1) GET으로 받은 OFF/LEFT/RIGHT
+  2) SUBSCRIPTION으로 받은 OFF/LEFT/RIGHT
+  3) 유한한 실제 m/s 속도
+  4) 비어 있지 않은 TBT 목록과 유효 거리
+  5) Pleos TTS 재생 시작 및 완료 콜백
+
+모두 있으면 PASS_ACTUAL_CALLBACKS, 하나라도 없으면 INCOMPLETE_ACTUAL_CALLBACKS.
+live_probe=1 단독은 OBSERVATION_FINISHED_NOT_VERIFIED이며 검증 성공이 아니다.
+콜백 관측은 최대 512개, 테스트 보고서는 내부 files/pleos-runtime-proof.json과 외부 coach-smoke 폴더에 저장한다.
+
+마지막으로 실제 수신한 API·값·환경·미지원 항목을 분리해서 사용자에게 보고한다. main은 끝까지 그대로 둔다.
+
+8. Figma와 기획 참고
+
+파일: https://www.figma.com/design/UTgSBQztO4iDsnoTUyetPL/
+  201:4535 = 3_초보운전을 위한 쉬운안내
+  239:4532 = 별도 주행·주차 상세 메모
+  201:4536 = 상황·기록·주행 스케치
+  201:4537 = 1_퀘스트
+  254:4536 = 단계별 완료 동그라미가 있는 이미지
+
+연결된 주행/주차 Notion 문서는 404 object_not_found로 읽지 못했다:
+  https://app.notion.com/p/TUTORIAL-4122f29c1aa880d5a657dadbff8de120
+  https://app.notion.com/p/TUTORIAL-4122f29c1aa880d396bbe09c92be4ccb
+
+사용자가 제공한 전체 Figma 검토 텍스트는 별도 이관 파일에도 복사한다. 현재 Figma는 회의 보드 성격이 강하고 완성된 코치 UI 명세가 아니었다. 초기 기획을 새로 추측하는 데 시간을 쓰기보다 기존 코드와 검증 중단 지점부터 이어간다.
+
+9. 이관 주의
+
+이 파일은 업무 컨텍스트 요약이다. 실제 API 값 수신 완료 증거가 아니다.
+이관 ZIP에는 SDK/AVD 이미지, adb 키, 에뮬레이터 인증 토큰, 계정 정보, 원본 채팅 전체 로그를 넣지 않는다.
+정확한 최종 코드 SHA와 빌드 결과는 함께 제공되는 이관상태 JSON을 우선한다.

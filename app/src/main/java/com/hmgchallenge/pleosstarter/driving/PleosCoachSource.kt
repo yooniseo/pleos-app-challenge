@@ -18,13 +18,24 @@ import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
 import ai.pleos.playground.vehicle.listener.TurnSignalStateListener
 
 /** Actual SDK 2.3.2 / 3.0.5 adapter. No synthesized live vehicle or maneuver values. */
-class PleosCoachSource(private val context: Context, private val listener: Listener) {
+class PleosCoachSource(private val context: Context, callback: Listener,
+    private val observe: (ApiObservation) -> Unit = {}) {
     interface Listener {
         fun onNavigation(right: Boolean, meters: Double?, description: String)
         fun onIndicator(value: Indicator)
         fun onRouteInvalidated(reason: String)
         fun onArrival()
         fun onStatus(channel: String, message: String)
+    }
+    private val listener = object : Listener {
+        override fun onNavigation(right: Boolean, meters: Double?, description: String) = callback.onNavigation(right,meters,description)
+        override fun onIndicator(value: Indicator) = callback.onIndicator(value)
+        override fun onRouteInvalidated(reason: String) = callback.onRouteInvalidated(reason)
+        override fun onArrival() = callback.onArrival()
+        override fun onStatus(channel: String, message: String) {
+            observe(ApiObservation(channel,"STATUS",mapOf("message" to message)))
+            callback.onStatus(channel,message)
+        }
     }
     private val handler = Handler(Looper.getMainLooper())
     private var running = false
@@ -83,11 +94,16 @@ class PleosCoachSource(private val context: Context, private val listener: Liste
                         // Do not pick a later RIGHT past the nearest maneuver. Its identity would be ambiguous.
                         val next = tbtInfoList.firstOrNull()
                         val distance = next?.distance?.takeIf { it.isFinite() && it >= 0 }
+                        observe(ApiObservation("NAVI_TBT",if(next==null) "EMPTY" else "VALUE",mapOf(
+                            "count" to tbtInfoList.size.toString(),"type" to next?.type?.name.orEmpty(),
+                            "distanceMeters" to distance?.toString().orEmpty(),"description" to next?.description.orEmpty())))
                         listener.onNavigation(next?.type == TurnType.TURN_RIGHT, distance, next?.description.orEmpty())
                         listener.onStatus("내비", if (next == null) "다음 안내 없음" else "실제 TBT · ${next.type.name} · ${distance?.toInt() ?: "—"}m")
                     }
                 }
                 override fun onCurrentLocationInfo(currentLocationInfo: CurrentLocationInfo) = post(token) {
+                    observe(ApiObservation("NAVI_LOCATION","VALUE",mapOf("routeId" to currentLocationInfo.routeId,
+                        "routeIndex" to currentLocationInfo.currentRouteIndex.toString())))
                     val nextId = currentLocationInfo.routeId.takeIf { it.isNotBlank() }
                     if (routeId != null && nextId != routeId) listener.onRouteInvalidated("경로 ID 변경")
                     routeId = nextId
@@ -119,6 +135,7 @@ class PleosCoachSource(private val context: Context, private val listener: Liste
             helper.initialize(onConnected = { post(token) {
                 try {
                     helper.addListener(events); navigationReady = true
+                    observe(ApiObservation("NAVI","CONNECTED"))
                     listener.onStatus("내비", "연결됨 · 실제 TBT 응답 대기")
                     helper.getCurrentLocationInfo(); helper.getTBTInfo()
                 } catch (error: Exception) { listener.onStatus("내비", "등록 실패 · ${error.javaClass.simpleName}") }
@@ -135,7 +152,7 @@ class PleosCoachSource(private val context: Context, private val listener: Liste
             val connected = Vehicle(context.applicationContext).also { vehicle = it; it.initialize() }
             val api = connected.getTurnSignal()
             val events = object : TurnSignalStateListener {
-                override fun onTurnSignalStateUpdated(state: TurnSignalValue?) = post(token) { indicator(state) }
+                override fun onTurnSignalStateUpdated(state: TurnSignalValue?) = post(token) { indicator(state,"SUBSCRIPTION") }
                 override fun onFailed(e: Exception) = post(token) {
                     listener.onIndicator(Indicator.UNKNOWN)
                     listener.onStatus("방향지시등", "구독 실패 · ${e.javaClass.simpleName}")
@@ -143,6 +160,7 @@ class PleosCoachSource(private val context: Context, private val listener: Liste
             }
             signalListener = events
             api.checkTurnSignalStateCapabilities(onComplete = { config -> post(token) {
+                observe(ApiObservation("TURN_SIGNAL_CAPABILITY","VALUE",mapOf("accessType" to config.accessType.name)))
                 if (config.accessType == AccessType.READ || config.accessType == AccessType.READ_WRITE) {
                     signalReadable = true
                     runCatching { api.registerTurnSignalState(events); readIndicator(token) }
@@ -168,8 +186,9 @@ class PleosCoachSource(private val context: Context, private val listener: Liste
         }
     }
 
-    private fun indicator(value: TurnSignalValue?) {
+    private fun indicator(value: TurnSignalValue?, operation: String = "GET") {
         lastIndicatorAt = android.os.SystemClock.elapsedRealtime()
+        observe(ApiObservation("TURN_SIGNAL",if(value==null) "NULL" else "VALUE",mapOf("operation" to operation,"state" to value?.name.orEmpty())))
         val state = when (value) { TurnSignalValue.RIGHT -> Indicator.RIGHT; TurnSignalValue.LEFT -> Indicator.LEFT
             TurnSignalValue.OFF -> Indicator.OFF; null -> Indicator.UNKNOWN }
         listener.onIndicator(state)

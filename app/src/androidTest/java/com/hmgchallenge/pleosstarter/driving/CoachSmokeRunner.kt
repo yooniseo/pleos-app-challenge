@@ -15,7 +15,14 @@ import java.io.File
 /** Dependency-free emulator checks; live_probe=1 runs read-only SDK observation only. */
 class CoachSmokeRunner : Instrumentation() {
     private var live=false
-    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);live=arguments?.getString("live_probe")=="1";start()}
+    private var strict=false
+    private var seconds=90
+    override fun onCreate(arguments: Bundle?) {
+        super.onCreate(arguments);live=arguments?.getString("live_probe")=="1"
+        strict=arguments?.getString("strict_live")=="1"
+        seconds=arguments?.getString("seconds")?.toIntOrNull()?.coerceIn(15,180) ?: 90
+        start()
+    }
     override fun onStart() {
         val result=Bundle()
         val journal=File(targetContext.filesDir,"driving-coach-events.jsonl")
@@ -27,9 +34,16 @@ class CoachSmokeRunner : Instrumentation() {
                 android.os.Build.MODEL.contains("sdk") || android.os.Build.MODEL.contains("emulator",true)) {"Emulator-only test"}
             val intent=Intent(targetContext,DrivingCoachActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra("live_mode",live)
+            if(live) runCatching {uiAutomation.grantRuntimePermission(targetContext.packageName,"android.car.permission.CAR_SPEED")}
             activity=startActivitySync(intent);waitForIdleSync()
             val current=activity
-            if(live) {
+            if(live && strict) {
+                val verification=verifyActualCallbacks(current as DrivingCoachActivity,seconds)
+                result.putString("verification",verification.toString())
+                result.putString("evidence_file",File(targetContext.filesDir,"pleos-runtime-proof.json").absolutePath)
+                result.putString("result",if(verification.allVerified) "PASS_ACTUAL_CALLBACKS" else "INCOMPLETE_ACTUAL_CALLBACKS")
+                resultCode=if(verification.allVerified) Activity.RESULT_OK else Activity.RESULT_CANCELED
+            } else if(live) {
                 Thread.sleep(12_000);waitForIdleSync();capture("live-coach.png")
                 runOnMainSync {
                     result.putString("observed_screen",allText(current.window.decorView).joinToString(" | "))
@@ -56,7 +70,7 @@ class CoachSmokeRunner : Instrumentation() {
                 click(current,"parking_next");waitForIdleSync();capture("parking-checklist.png")
                 result.putInt("scenario_steps",completed.size)
             }
-            result.putString("result","PASS")
+            if(!(live && strict)) result.putString("result",if(live) "OBSERVATION_FINISHED_NOT_VERIFIED" else "PASS")
         } catch (error: Throwable) {
             result.putString("result","FAIL: ${error.stackTraceToString()}");resultCode=Activity.RESULT_CANCELED
         } finally {
@@ -64,6 +78,38 @@ class CoachSmokeRunner : Instrumentation() {
             if(original==null) journal.delete() else journal.writeBytes(original)
         }
         finish(resultCode,result)
+    }
+    private fun verifyActualCallbacks(a: DrivingCoachActivity,seconds: Int): RuntimeVerification {
+        runOnMainSync {check(!a.isDemoModeForDiagnostics()) {"Actual SDK probe cannot run in demo mode"}}
+        val dir=File(targetContext.getExternalFilesDir(null),"coach-smoke").apply {mkdirs()}
+        val report=File(dir,"pleos-runtime-proof.json")
+        val internalReport=File(targetContext.filesDir,"pleos-runtime-proof.json")
+        val deadline=android.os.SystemClock.elapsedRealtime()+seconds*1_000L
+        var spoken=false
+        var samples=emptyList<ApiObservation>()
+        var statuses=emptyMap<String,String>()
+        do {
+            runOnMainSync {
+                samples=a.runtimeObservations();statuses=a.connectionStatus()
+                if(!spoken && samples.any {it.api=="TTS" && it.kind=="CONNECTED"}) spoken=a.speakConnectionCheckForTest()
+            }
+            val v=RuntimeVerification.from(samples)
+            val json=org.json.JSONObject().apply {
+                put("source","PLEOS_EMULATOR_SDK_CALLBACKS");put("appDemoMode",false)
+                put("allVerified",v.allVerified);put("signalValueReceived",v.signalValueReceived)
+                put("signalSubscriptionReceived",v.signalSubscriptionReceived);put("speedValueReceived",v.speedValueReceived)
+                put("tbtValueReceived",v.tbtValueReceived);put("speechPlaybackCompleted",v.speechPlaybackCompleted)
+                put("statuses",org.json.JSONObject(statuses))
+                put("observations",org.json.JSONArray().apply {samples.forEach {s->put(org.json.JSONObject().apply {
+                    put("api",s.api);put("kind",s.kind);put("timestamp",s.timestamp);put("values",org.json.JSONObject(s.values))
+                })}})
+            }
+            report.writeText(json.toString(2))
+            internalReport.writeText(json.toString(2))
+            if(v.allVerified) break
+            Thread.sleep(2_000)
+        } while(android.os.SystemClock.elapsedRealtime()<deadline)
+        return RuntimeVerification.from(samples)
     }
     private fun click(a: Activity,tag: String) {
         runOnMainSync {check(a.window.decorView.findViewWithTag<Button>(tag)?.performClick()==true){"Missing action $tag"}}

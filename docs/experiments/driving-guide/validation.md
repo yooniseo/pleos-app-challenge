@@ -2,6 +2,8 @@
 
 상태: **실험 중**. 주행·주차 코치 화면과 Pleos 연동 코드를 구현했습니다. 실제 Pleos 서비스 값 수신은 아직 검증 완료가 아닙니다.
 
+후속 확인: 실제 콜백 관측/엄격한 검증 기준을 추가한 최신 소스에서도 앱·테스트 APK 빌드, 단위 테스트 26개(실패 0), Lint를 통과했습니다. Pleos 실제 값 수신 성공은 아니며, 집 PC 재개를 위해 [이관 컨텍스트](HANDOFF.txt)에 최신 환경 오류와 실행 순서를 기록했습니다.
+
 ## 통과한 확인
 
 - `assembleDebug`, `assembleDebugAndroidTest` 성공. Vehicle 2.3.2, NaviHelper 3.0.5, TextToSpeech 3.3.1 공개 API로 컴파일했습니다.

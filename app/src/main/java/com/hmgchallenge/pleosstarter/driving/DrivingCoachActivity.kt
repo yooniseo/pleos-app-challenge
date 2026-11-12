@@ -42,6 +42,7 @@ class DrivingCoachActivity : Activity() {
     private var parkingInstance = UUID.randomUUID().toString()
     private val checks = mutableSetOf<String>()
     private val statuses = linkedMapOf<String,String>()
+    private val runtimeEvidence = RuntimeEvidence()
     private var dialog: AlertDialog? = null
     private lateinit var content: LinearLayout
     private var titleView: TextView? = null
@@ -117,7 +118,7 @@ class DrivingCoachActivity : Activity() {
             }
             override fun onArrival() { if (valid(token)) statuses["도착"] = "도착했어요 · 완전히 정차한 후 주차 마무리를 확인해 주세요" }
             override fun onStatus(channel: String, message: String) { if (valid(token)) { statuses[channel] = message; updateDriving() } }
-        }).also { it.start() }
+        },runtimeEvidence::record).also { it.start() }
         }
         try {
             detailSource = CarDetailSource(this) { allowed -> if (valid(token)) {
@@ -127,15 +128,18 @@ class DrivingCoachActivity : Activity() {
         if (checkSelfPermission(SPEED_PERMISSION) == PackageManager.PERMISSION_GRANTED) startSpeed(token)
         else requestPermissions(arrayOf(SPEED_PERMISSION), 403)
         try {
-            voice = PleosCoachVoice(this) { message -> if (valid(token)) statuses["음성"] = message }.also { it.start() }
+            voice = PleosCoachVoice(this,{ message -> if (valid(token)) statuses["음성"] = message },runtimeEvidence::record).also { it.start() }
         } catch (error: Exception) { statuses["음성"] = "음성 서비스 연결 실패 · ${error.javaClass.simpleName}" }
     }
 
     private fun startSpeed(token: Int) {
+        if(speedSource!=null) return
         try {
             speedSource = SpeedSource(this) { value, message -> handler.post {
                 if (valid(token)) {
                     gate.updateSpeed(value)
+                    runtimeEvidence.record(ApiObservation("SPEED",if(value?.isFinite()==true) "VALUE" else "NULL",
+                        mapOf("metersPerSecond" to value?.toString().orEmpty(),"status" to message)))
                     statuses["속도"] = speedKmh(value)?.let { "${String.format(Locale.US,"%.0f",it)} km/h · 실제 차량" } ?: message
                     enforceDetailGate(); updateDriving()
                 }
@@ -159,7 +163,7 @@ class DrivingCoachActivity : Activity() {
         val scroll = ScrollView(this).apply { setBackgroundColor(bg); isFillViewport=true; addView(content) }
         val header = row(content)
         header.addView(label("TUTORIAL  /  뿌까",15f,mint), LinearLayout.LayoutParams(0,-2,1f))
-        header.addView(label(if(demo) "● 시뮬레이션" else "● 실제 차량 연결",14f,mint))
+        header.addView(label(if(demo) "● 시뮬레이션" else "● 차량 모드",14f,if(demo) mint else muted))
         content.addView(label("한 걸음씩, 함께 운전해요",27f).apply { setTypeface(null,Typeface.BOLD) })
         val tabs = row(content)
         button(tabs,"주행 안내","tab_driving") { page="driving";buildPage() }
@@ -292,6 +296,15 @@ class DrivingCoachActivity : Activity() {
 
     /** Host/test diagnostics. Call on the main thread; values are service status, never demo substitutions. */
     fun connectionStatus(): Map<String,String> = statuses.toMap()
+    fun runtimeObservations(): List<ApiObservation> = runtimeEvidence.snapshot()
+    fun isDemoModeForDiagnostics(): Boolean = demo
+    /** Debug emulator probe only; no path for synthetic turn or speed input into the coach. */
+    fun speakConnectionCheckForTest(): Boolean {
+        val debug=applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+        if(!debug || demo || !active || android.os.Build.HARDWARE !in setOf("ranchu","goldfish")) return false
+        voice?.speak("주행 코치 음성 연결을 확인합니다.")
+        return voice!=null
+    }
 
     private val advanceDemo=object : Runnable {
         override fun run() {
