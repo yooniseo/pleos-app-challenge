@@ -55,7 +55,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        demo = savedInstanceState?.getBoolean("demo", true) ?: true
+        // 검증용: adb shell am start ... --ez demo false 로 실제 차량 모드로 바로 시작
+        demo = savedInstanceState?.getBoolean("demo", true) ?: intent.getBooleanExtra("demo", true)
         window.statusBarColor = Color.rgb(13, 22, 31)
         window.navigationBarColor = Color.rgb(13, 22, 31)
         val content = LinearLayout(this).apply {
@@ -200,7 +201,9 @@ class MainActivity : Activity() {
 
     private fun connectSpeed(token: Int) {
         try {
-            speedSource = SpeedSource(this) { value, message -> update(token) {
+            speedSource = SpeedSource(this) { value, message ->
+                android.util.Log.d("SpeedCheck", "raw=$value m/s kmh=${speedKmh(value)} msg=$message")
+                update(token) {
                 speed.text = speedKmh(value)?.let { String.format(Locale.US, "%.0f", it) } ?: "—"
                 speedStatus.text = message
             } }.also { it.start() }

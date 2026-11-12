@@ -22,7 +22,7 @@ class SttProbe(context: Context, private val onStatus: (String) -> Unit) {
         override fun onStartedRecognition() = post("인식 시작")
         override fun onUpdated(stt: String, completed: Boolean) =
             post(if (completed) "✅ 인식 완료: $stt" else "인식 중: $stt")
-        override fun onEndedRecognition() = Log.d(TAG, "onEndedRecognition")
+        override fun onEndedRecognition() { Log.d(TAG, "onEndedRecognition") }
         override fun onError(errorType: ErrorType) = post("❌ 오류: $errorType")
         override fun onUpdatedEpdData(on: Long, off: Long) = Unit
         override fun onUpdatedRms(rms: Double) = Unit

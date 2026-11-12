@@ -13,6 +13,8 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true">
+            <!-- 주행 중에도 화면을 띄울 수 있음을 표시. 없으면 차가 움직일 때 "주행 중에는 사용할 수 없습니다"로 차단됨 -->
+            <meta-data android:name="distractionOptimized" android:value="true" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
