@@ -34,6 +34,9 @@ class DrivingSimulatorActivity : Activity() {
     private val muted=Color.rgb(180,199,209)
     private lateinit var root: LinearLayout
     private lateinit var stateView: TextView
+    private lateinit var controlsStateView: TextView
+    private lateinit var coachVoiceView: TextView
+    private lateinit var coachVoiceButton: Button
     private lateinit var cueView: TextView
     private lateinit var stageView: TextView
     private lateinit var feedbackView: TextView
@@ -58,6 +61,8 @@ class DrivingSimulatorActivity : Activity() {
     private var sdkSpeed: Float?=null
     private var sdkSignal=Indicator.UNKNOWN
     private var bridgeStatus="에뮬레이터 연결 확인 중"
+    private var voiceStatus="Pleos 음성 연결 중"
+    private val coachNotes=mutableListOf<String>()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if(packageManager.hasSystemFeature("android.hardware.type.automotive") && !EmulatorCockpitBridge.isAllowed(this)) {
@@ -72,6 +77,7 @@ class DrivingSimulatorActivity : Activity() {
         bridge=EmulatorCockpitBridge(this) {bridgeStatus=it;render()}.also {it.start()}
         if(packageManager.hasSystemFeature("android.hardware.type.automotive")) {
             voice=PleosCoachVoice(this,{message->
+                voiceStatus=message
                 if(active && !paused && voiceEnabled && message=="Pleos ON_DEVICE 음성 준비됨")voice?.speak(model.instruction())
             }).also {it.start()}
             sdkSource=PleosCoachSource(this,object : PleosCoachSource.Listener {
@@ -97,29 +103,60 @@ class DrivingSimulatorActivity : Activity() {
         }
     }
     private fun build() {
-        root=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(22),dp(14),dp(22),dp(24))}
-        setContentView(ScrollView(this).apply {setBackgroundColor(Color.rgb(13,25,34));isFillViewport=true;addView(root)})
-        text(root,"운전석 체험  /  주차된 차 빼기부터 다시 정차까지",25f,mint)
-        text(root,"가상 도로·차량 모형입니다. 핸들 각도는 체험용 계산값이며 실제 도로의 조작 지시로 사용할 수 없어요.",13f,muted)
+        root=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(10),dp(18),dp(12));setBackgroundColor(Color.rgb(13,25,34))
+        }
+        setContentView(root)
+        text(root,"주행 코치와 함께 운전해요",23f,mint)
+        text(root,"시뮬레이션 · 왼쪽 안내를 보며 오른쪽에서 조작해요. 핸들 각도는 가상 차량·도로 기준입니다.",12f,muted)
         val header=row(root)
-        button(header,"주행 코치로","sim_close") {finish()}
+        button(header,"체험 끝내기","sim_close") {finish()}
         button(header,"시나리오 선택","sim_scenario") {chooseScenario()}
         button(header,"처음부터","sim_restart") {reset(model.turnRight,model.laneRight)}
         pauseButton=button(header,"일시정지","sim_pause") {paused=!paused;if(paused)model.freeze();render()}
         button(header,"피드백","sim_feedback") {showFeedback()}
-        button(header,"안내 듣기","sim_speak") {voice?.speak(model.instruction()) ?: toast("화면 안내를 확인해 주세요")}
-        stageView=text(root,"",19f,mint)
-        cueView=text(root,"",23f,Color.WHITE).apply {tag="sim_cue";setTypeface(null,Typeface.BOLD)}
-        stateView=text(root,"",16f,muted).apply {tag="sim_state"}
-        val panels=row(root)
-        val roadCard=card(panels)
-        road=SimulatorRoadView(this,model).apply {tag="sim_road"};roadCard.addView(road,LinearLayout.LayoutParams(-1,dp(240)))
-        feedbackView=text(roadCard,"",17f,mint)
-        val wheelCard=card(panels)
-        text(wheelCard,"핸들을 직접 돌리거나 아래 슬라이더를 움직여요",13f,muted)
+        val wide=resources.configuration.screenWidthDp>=760
+        val panels=LinearLayout(this).apply {orientation=if(wide)LinearLayout.HORIZONTAL else LinearLayout.VERTICAL}
+        root.addView(panels,LinearLayout.LayoutParams(-1,0,1f))
+        fun pane(tagName: String,weight: Float): LinearLayout {
+            val scroll=ScrollView(this).apply {
+                tag=tagName;isFillViewport=true
+                background=GradientDrawable().apply {setColor(Color.rgb(25,43,54));cornerRadius=dp(16).toFloat()}
+            }
+            val params=if(wide)LinearLayout.LayoutParams(0,-1,weight) else LinearLayout.LayoutParams(-1,0,weight)
+            params.setMargins(0,dp(8),if(wide)dp(10) else 0,0);panels.addView(scroll,params)
+            return LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(12),dp(16),dp(16));scroll.addView(this)}
+        }
+        val coach=pane("training_coach_panel",1f)
+        text(coach,"주행 코치  ·  시뮬레이션 입력 연결",18f,mint)
+        stageView=text(coach,"",16f,muted)
+        cueView=text(coach,"",23f,Color.WHITE).apply {tag="sim_cue";setTypeface(null,Typeface.BOLD)}
+        stateView=text(coach,"",16f,muted).apply {tag="sim_state"}
+        road=SimulatorRoadView(this,model).apply {tag="sim_road"}
+        coach.addView(road,LinearLayout.LayoutParams(-1,dp(if(wide)285 else 180)).apply {topMargin=dp(8)})
+        feedbackView=text(coach,"",17f,mint)
+        val coachActions=row(coach)
+        button(coachActions,"다시 듣기","sim_speak") {voice?.speak(model.instruction()) ?: toast("화면 안내를 확인해 주세요")}
+        coachVoiceButton=button(coachActions,"음성 켜기","sim_coach_voice") {
+            voiceEnabled=!voiceEnabled
+            val repository=CoachRepository(this);repository.savePreferences(repository.preferences().copy(voiceEnabled=voiceEnabled))
+            if(voiceEnabled)voice?.speak(model.instruction()) else voice?.stop()
+            render()
+        }
+        button(coachActions,"이 순간 기억","sim_coach_note") {
+            val stamp=java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.KOREA).format(java.util.Date())
+            if(coachNotes.size<100)coachNotes.add("$stamp · ${model.stage.title} · ${model.instruction()}")
+            toast("주행 피드백에 이 순간을 기록했어요");render()
+        }
+        coachVoiceView=text(coach,"",12f,muted)
+        text(coach,"차로 수·위치·신호·보행자는 이 연습의 가상 상태입니다. 개인 실주행 기록과 구분해 저장해요.",12f,muted)
+        val controls=pane("training_controls_panel",1.05f)
+        text(controls,"운전석 조작판",18f,mint)
+        controlsStateView=text(controls,"",13f,muted).apply {tag="sim_controls_state"}
+        text(controls,"핸들을 드래그하거나 슬라이더로 돌려요",13f,muted)
         wheel=SimulatorWheelView(this).apply {tag="sim_wheel";onSteer={model.steer(it);render()}}
-        wheelCard.addView(wheel,LinearLayout.LayoutParams(-1,dp(180)))
-        targetView=text(wheelCard,"",16f,mint).apply {tag="sim_target"}
+        controls.addView(wheel,LinearLayout.LayoutParams(-1,dp(155)))
+        targetView=text(controls,"",16f,mint).apply {tag="sim_target"}
         steeringSlider=SeekBar(this).apply {
             tag="sim_steering";max=900;progress=450
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -127,42 +164,38 @@ class DrivingSimulatorActivity : Activity() {
                 override fun onStartTrackingTouch(v: SeekBar?) {}
                 override fun onStopTrackingTouch(v: SeekBar?) {}
             })
-        };wheelCard.addView(steeringSlider)
-        val trim=row(wheelCard)
+        };controls.addView(steeringSlider)
+        val trim=row(controls)
         button(trim,"−15°","sim_steer_left") {model.steer(model.steering-15);render()}
         button(trim,"0°","sim_steer_zero") {model.steer(0.0);render()}
         button(trim,"+15°","sim_steer_right") {model.steer(model.steering+15);render()}
-        if(resources.configuration.screenWidthDp>=760) {
-            roadCard.layoutParams=LinearLayout.LayoutParams(0,-2,1.25f).apply {rightMargin=dp(12)}
-            wheelCard.layoutParams=LinearLayout.LayoutParams(0,-2,1f)
-        } else panels.orientation=LinearLayout.VERTICAL
-        val pedals=row(root)
+        val pedals=row(controls)
         brakeButton=pedal(pedals,"브레이크 켜기","sim_brake",true)
         acceleratorButton=pedal(pedals,"액셀 켜기","sim_accelerator",false)
         button(pedals,"페달 모두 떼기","sim_pedals_release") {model.pedals(0.0,0.0);render()}
-        text(root,"페달은 한 번 클릭하면 유지, 다시 클릭하면 해제돼요. 다른 페달을 누르면 기존 페달은 풀려요.",12f,muted)
-        val gears=row(root)
+        text(controls,"페달은 클릭 한 번으로 유지, 다시 클릭하면 해제돼요.",12f,muted)
+        val gears=row(controls)
         SimGear.values().forEach {g->button(gears,g.name,"sim_gear_$g") {if(!model.selectGear(g))toast(model.feedback);render()}}
-        parkingButton=button(gears,"","sim_parking_brake") {if(!model.setParkingBrake(!model.parkingBrake))toast(model.feedback);render()}
-        val signals=row(root)
+        val preparations=row(controls)
+        beltButton=button(preparations,"","sim_belt") {if(model.stopped){model.belt=!model.belt;render()}else toast("정차 중 조작해 주세요")}
+        parkingButton=button(preparations,"","sim_parking_brake") {if(!model.setParkingBrake(!model.parkingBrake))toast(model.feedback);render()}
+        val signals=row(controls)
         button(signals,"← 왼쪽 깜빡이","sim_signal_left") {model.setSignal(SimSignal.LEFT);render()}
         button(signals,"깜빡이 끄기","sim_signal_off") {model.setSignal(SimSignal.OFF);render()}
         button(signals,"오른쪽 깜빡이 →","sim_signal_right") {model.setSignal(SimSignal.RIGHT);render()}
-        button(signals,"미러·주변 확인 입력","sim_check") {model.checkMirrors();render()}
-        val body=row(root)
-        beltButton=button(body,"","sim_belt") {if(model.stopped){model.belt=!model.belt;render()}else toast("정차 중 조작해 주세요")}
+        val surroundings=row(controls)
+        button(surroundings,"미러·주변 확인 입력","sim_check") {model.checkMirrors();render()}
+        button(surroundings,"와이퍼 단계 변경","sim_wiper") {model.wiper=(model.wiper+1)%4;render()}
+        val body=row(controls)
         button(body,"창문 열기 50%","sim_window_open") {model.windowOpen=50;render()}
         button(body,"창문 닫기","sim_window_close") {model.windowOpen=0;render()}
-        button(body,"와이퍼 단계 변경","sim_wiper") {model.wiper=(model.wiper+1)%4;render()}
-        val situations=row(root)
+        val situations=row(controls)
         greenButton=button(situations,"","sim_green") {model.green=!model.green;render()}
         pedestrianButton=button(situations,"","sim_pedestrian") {model.pedestrian=!model.pedestrian;render()}
         button(situations,"비 오는 상황 전환","sim_rain") {model.rain=!model.rain;render()}
-        text(root,"신호·보행자·미러 확인은 직접 설정하는 체험 조건입니다. 실제 영상 분석이나 통행 가능 판정이 아닙니다.",12f,muted)
-        text(root,"깜빡이를 켜면 Pleos 사각지대 카메라가 열릴 수 있어요. 뒤로 돌아온 뒤 ‘계속하기’를 눌러 체험을 이어가요.",12f,muted)
-        text(root,"핸들 계산: 축거 2.75m · 조향비 14.5:1 · 출구 반경 7m / 교차로 반경 9m의 가상 차량",12f,muted)
-        linkView=text(root,"에뮬레이터 연결 확인 중",12f,muted)
-        text(root,"체험을 닫으면 에뮬레이터는 0km/h·P단·깜빡이 OFF로 돌아갑니다. 체험 기록은 퀘스트의 시뮬레이션 기록에만 연결해요.",12f,muted)
+        text(controls,"시스템 카메라가 열리면 뒤로 돌아와 ‘계속하기’를 눌러요. 코치와 조작판 사이를 누를 때는 계속 진행돼요.",12f,muted)
+        linkView=text(controls,"에뮬레이터 연결 확인 중",12f,muted)
+        text(controls,"R단 이동·벨트·사이드브레이크는 앱 모형입니다. 종료 시 에뮬레이터는 P·0km/h·깜빡이 OFF로 복귀해요.",12f,muted)
         render()
     }
     private fun pedal(parent: LinearLayout,title: String,tag: String,braking: Boolean)=button(parent,title,tag) {
@@ -176,7 +209,8 @@ class DrivingSimulatorActivity : Activity() {
         stageView.text=(if(paused)"일시정지 · " else "")+model.stage.title.replace("왼쪽",model.laneDirection)
         val cue=model.instruction();cueView.text=cue
         stateView.text="${model.gear}단 · ${"%.1f".format(java.util.Locale.US,model.speed*3.6)}km/h · 핸들 ${model.steering.roundToInt()}° · 깜빡이 ${when(model.signal){SimSignal.OFF->"꺼짐";SimSignal.LEFT->"왼쪽";SimSignal.RIGHT->"오른쪽"}}\n"+
-            "현재 ${model.currentLane}차로 → 목표 ${model.targetLane}차로 · ${model.lanesRemaining}개 남음 · 엑셀 ${model.accelerator.roundToInt()}% / 브레이크 ${model.brake.roundToInt()}% · 창문 ${model.windowOpen}% · 와이퍼 ${listOf("OFF","AUTO","LOW","HIGH")[model.wiper]}"
+            "현재 ${model.currentLane}차로 → 목표 ${model.targetLane}차로 · ${model.lanesRemaining}개 남음"
+        controlsStateView.text="액셀 ${model.accelerator.roundToInt()}% · 브레이크 ${model.brake.roundToInt()}% · 창문 ${model.windowOpen}% · 와이퍼 ${listOf("OFF","AUTO","LOW","HIGH")[model.wiper]}"
         wheel.angle=model.steering;wheel.target=model.targetSteering;wheel.invalidate()
         if(!steeringSlider.isPressed)steeringSlider.progress=model.steering.roundToInt()+450
         val target=model.targetSteering
@@ -191,6 +225,8 @@ class DrivingSimulatorActivity : Activity() {
         acceleratorButton.text=if(model.accelerator>0)"액셀 유지 중\n클릭하면 해제" else "액셀 켜기"
         brakeButton.backgroundTintList=android.content.res.ColorStateList.valueOf(if(model.brake>0)Color.rgb(147,69,54) else Color.rgb(41,66,79))
         acceleratorButton.backgroundTintList=android.content.res.ColorStateList.valueOf(if(model.accelerator>0)Color.rgb(36,111,97) else Color.rgb(41,66,79))
+        coachVoiceButton.text=if(voiceEnabled)"음성 끄기" else "음성 켜기"
+        coachVoiceView.text="코치 음성 ${if(voiceEnabled)"ON" else "OFF"} · $voiceStatus\n기억한 순간 ${coachNotes.size}개 · 피드백에서 돌아볼 수 있어요"
         linkView.text="$bridgeStatus\nSDK 관측 · 속도 ${sdkSpeed?.let {"%.1f km/h".format(java.util.Locale.US,it*3.6)} ?: "응답 대기"} · 깜빡이 ${sdkSignal.name}"
         if(model.feedback!=lastFeedback && model.feedback.startsWith("좋아요")) {lastFeedback=model.feedback;if(voiceEnabled)voice?.speak(model.feedback)}
         if(model.stage!=lastStage || (cue!=lastCue && (cue.contains("깜빡이") || model.stage==SimStage.PREPARE || model.stage==SimStage.TURN_CHECK))) {
@@ -218,7 +254,7 @@ class DrivingSimulatorActivity : Activity() {
     }
     private fun reset(right: Boolean,laneRight: Boolean) {
         voice?.stop()
-        model.freeze();model=DrivingSimulator(right,laneRight);tripId=UUID.randomUUID().toString();recorded.clear();paused=false;lastStage=null;lastCue="";lastFeedback="";render()
+        model.freeze();model=DrivingSimulator(right,laneRight);tripId=UUID.randomUUID().toString();recorded.clear();coachNotes.clear();paused=false;lastStage=null;lastCue="";lastFeedback="";render()
     }
     private fun showFeedback() {
         voice?.stop();model.freeze();paused=true
@@ -230,7 +266,8 @@ class DrivingSimulatorActivity : Activity() {
             .setOnCancelListener {paused=false}.show()
     }
     private fun reportText()="체험 결과 · 실제 주행 성공 판정 아님\n\n"+model.practices.joinToString("\n") {"• ${it.message}"}+
-        "\n\n현재 단계: ${model.stage.title}\n조작 거리 ${model.distance.roundToInt()}m · 남은 차로 ${model.lanesRemaining}개\n퀘스트의 체험 기록에 연결했어요."
+        "\n\n현재 단계: ${model.stage.title}\n조작 거리 ${model.distance.roundToInt()}m · 남은 차로 ${model.lanesRemaining}개\n퀘스트의 체험 기록에 연결했어요."+
+        if(coachNotes.isEmpty())"" else "\n\n기억한 순간\n"+coachNotes.joinToString("\n")
     fun simulatorForDiagnostics()=model
     fun pausedForDiagnostics()=paused
     fun sdkForDiagnostics()=mapOf("speedMps" to sdkSpeed.toString(),"indicator" to sdkSignal.name,"bridge" to bridgeStatus)
@@ -251,8 +288,9 @@ class DrivingSimulatorActivity : Activity() {
         if(active) {voice?.stop();model.freeze();paused=true;render()}
         super.onPause()
     }
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {super.onConfigurationChanged(newConfig);build()}
     override fun onStop() {
-        if(model.practices.isNotEmpty())getSharedPreferences("driver_simulator",MODE_PRIVATE).edit().putString("last_report",reportText()).apply()
+        if(model.practices.isNotEmpty() || coachNotes.isNotEmpty())getSharedPreferences("driver_simulator",MODE_PRIVATE).edit().putString("last_report",reportText()).apply()
         active=false;model.freeze();paused=true;handler.removeCallbacksAndMessages(null);bridge?.stop();bridge=null;voice?.release();voice=null
         sdkSource?.stop();sdkSource=null;sdkSpeedSource?.stop();sdkSpeedSource=null;super.onStop()
     }

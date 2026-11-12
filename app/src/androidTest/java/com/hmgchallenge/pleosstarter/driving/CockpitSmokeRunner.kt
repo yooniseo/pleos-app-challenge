@@ -36,6 +36,13 @@ open class CockpitSmokeRunner : Instrumentation() {
                 taskRoot=tasks.first {it.taskInfo.taskId==a.taskId}.taskInfo.baseActivity?.className.orEmpty()
             }
             check(taskRoot==DrivingSimulatorActivity::class.java.name) {"Cockpit inherited a parked-only task root: $taskRoot"}
+            runOnMainSync {
+                val coach=a.window.decorView.findViewWithTag<android.view.View>("training_coach_panel")
+                val controls=a.window.decorView.findViewWithTag<android.view.View>("training_controls_panel")
+                val left=android.graphics.Rect();val right=android.graphics.Rect()
+                check(coach.getGlobalVisibleRect(left) && controls.getGlobalVisibleRect(right)) {"Coach and controls must both stay visible"}
+                if(a.resources.configuration.screenWidthDp>=760)check(left.right<=right.left) {"Coach and controls overlap"}
+            }
             capture("cockpit-ready.png")
             click(a,"sim_brake");Thread.sleep(250)
             runOnMainSync {check(a.simulatorForDiagnostics().brake==80.0)}
@@ -63,9 +70,9 @@ open class CockpitSmokeRunner : Instrumentation() {
             runOnMainSync {paused=a.pausedForDiagnostics()}
             if(paused)click(a,"sim_pause")
             repeat(3){click(a,"sim_steer_right")}
-            touch(a,"sim_accelerator",true);Thread.sleep(3_500)
+            touch(a,"sim_accelerator",true);Thread.sleep(4_500)
             val during=consoleState()
-            val controls=during.getJSONObject("controls");val body=during.getJSONObject("body")
+            val body=during.getJSONObject("body")
             check(during.getJSONObject("gear").getJSONObject("actual").getString("value")=="Park")
             var reverseDistance=0.0
             runOnMainSync {reverseDistance=a.simulatorForDiagnostics().distance}
@@ -89,6 +96,15 @@ open class CockpitSmokeRunner : Instrumentation() {
             check(forward.getJSONObject("controls").getInt("speed_kph")>0)
             runOnMainSync {sdk=a.sdkForDiagnostics()}
             check((sdk["speedMps"]?.toFloatOrNull() ?: 0f)>0f) {"Actual speed callback not received: $sdk"}
+            var beforeCoachClick=0.0
+            runOnMainSync {beforeCoachClick=a.simulatorForDiagnostics().distance}
+            click(a,"sim_coach_note");Thread.sleep(500)
+            runOnMainSync {
+                check(!a.pausedForDiagnostics()) {"Clicking coach paused the simulation"}
+                check(a.simulatorForDiagnostics().distance>beforeCoachClick) {"Simulation stopped while using coach"}
+                val cue=a.window.decorView.findViewWithTag<android.widget.TextView>("sim_cue").text.toString()
+                check(cue==a.simulatorForDiagnostics().instruction()) {"Coach is not observing the current simulation"}
+            }
             capture("cockpit-forward.png")
             touch(a,"sim_accelerator",false);touch(a,"sim_brake",true);Thread.sleep(1_000);touch(a,"sim_brake",false)
             runOnMainSync {check(a.simulatorForDiagnostics().stopped);a.finish()}
@@ -98,8 +114,10 @@ open class CockpitSmokeRunner : Instrumentation() {
             check(after.getJSONObject("gear").getJSONObject("actual").getString("value")=="Park")
             check(after.getJSONObject("lights").getString("turn_signal_mode")=="Off")
             check(QuestStore(targetContext,false).load()==personal)
+            check(simulatorPrefs.getString("last_report","")!!.contains("기억한 순간")) {"Coach note was not linked to feedback"}
             val proof=JSONObject().apply {
                 put("result","PASS_COCKPIT_CONTROLS");put("launchPath","COACH_ENTRY");put("taskRoot",taskRoot)
+                put("coachAndControlsVisible",true);put("coachInteractionKeptSimulationRunning",true)
                 put("reverseModelMeters",reverseDistance);put("during",during);put("forward",forward);put("after",after);put("sdk",JSONObject(sdk))
             }
             File(targetContext.filesDir,"cockpit-proof.json").writeText(proof.toString(2))

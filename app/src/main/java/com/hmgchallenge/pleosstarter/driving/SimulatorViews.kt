@@ -23,7 +23,7 @@ class SimulatorWheelView(context: Context) : View(context) {
         }
         wheel(target,Color.rgb(101,233,197),70);wheel(angle,Color.rgb(230,239,244),255)
         p.textSize=14*resources.displayMetrics.scaledDensity;p.textAlign=Paint.Align.CENTER;p.color=Color.WHITE
-        c.drawText("${angle.roundToInt()}°",cx,cy+r+28*resources.displayMetrics.density,p)
+        c.drawText("${angle.roundToInt()}°",cx,min(cy+r+28*resources.displayMetrics.density,height-8*resources.displayMetrics.density),p)
         p.textAlign=Paint.Align.LEFT
     }
     override fun onTouchEvent(e: MotionEvent): Boolean {
