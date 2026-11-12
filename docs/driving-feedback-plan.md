@@ -21,17 +21,18 @@
 
 ---
 
-## 0. 먼저 할 일: 사전 검증 (2개)
+## 0. 먼저 할 일: 사전 검증 (2개) — ✅ 모두 통과 (2026-11-12)
 
-핵심 기능은 "속도"와 "음성 메모" / 결과는 `docs/vehicle-sdk-notes.md`에 기록.
+핵심 기능은 "속도"와 "음성 메모" / 자세한 결과는 [vehicle-sdk-notes.md](vehicle-sdk-notes.md)
 
-| # | 확인 항목 | 방법 | 실패 시 대안 |
-|---|---|---|---|
-| V1 | **차량 속도 수신 + 에뮬레이터에서 속도 바꾸기** | 스타터 앱의 `SpeedSource.kt`(AAOS `PERF_VEHICLE_SPEED`)를 Pleos 에뮬레이터에서 실행하고, 에뮬레이터 차량 값 조절 기능 또는 공식 문서 "ADB Command Reference"로 속도를 바꿔 화면 값이 따라오는지 확인 | 실시간 속도는 포기하고 **CSV 재생기(A-4)로 시연**. 분석·리포트·퀘스트는 그대로 동작 |
-| V2 | **STT 동작** (에뮬레이터 마이크) | `SpeechToText(context, Mode.ON_DEVICE)`로 `request()` 후 `onUpdated(..., completed=true)` 결과가 오는지 확인 | 화면의 **텍스트 입력 / 상황 선택 버튼**으로 메모 입력 |
+| # | 확인 항목 | 결과 |
+|---|---|---|
+| V1 | **차량 속도 수신 + 에뮬레이터에서 속도 바꾸기** | ✅ Virtual Console로 주입한 속도를 앱이 그대로 수신 (0.1~0.2초마다 갱신) |
+| V2 | **STT 동작** (에뮬레이터 마이크) | ✅ `ON_DEVICE` 모드, **30 km/h 주행 중**에도 "방금 비보호 좌회전이 어려웠어" 인식 |
 
-
-- 권한(`CAR_SPEED`, `STT_SERVICE`)이 공모전 앱에 허용되는지 확인 필요
+- 권한 `CAR_SPEED`, `STT_SERVICE` 모두 허용됨
+- ⚠ **필수**: Activity에 `<meta-data android:name="distractionOptimized" android:value="true"/>`가 없으면 주행 중 앱이 차단됨
+- 브레이크 페달·조향각·방향지시등 등 **추가 차량 정보도 사용 가능** (권한 목록 + Virtual Console에서 확인, 6장 참고)
 
 ---
 
@@ -132,8 +133,10 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 | AAOS `CarPropertyManager` | 플랫폼 | A | `android.car.permission.CAR_SPEED` (현재 선언됨) |
 | Pleos **SpeechToText** | 3.3.1 | A | `pleos.car.permission.STT_SERVICE` |
 | AndroidX **Room**, Coroutines | 신규 추가 | 공통 | — |
+| (선택) Pleos **Vehicle** | 2.3.2 (현재 사용 중) | A | `pleos.car.permission.CAR_DRIVE` (브레이크·조향각), `pleos.car.permission.CAR_LIGHTS` (방향지시등) — **사용 가능 확인** |
 
-- Vehicle SDK의 브레이크·조향각·방향지시등, FusedLocation, TTS, Gleo, NaviHelper는 시간 남으면... 6장 참고.
+- Vehicle SDK의 브레이크·조향각·방향지시등은 쓸 수 있음이 확인됐으므로 MVP 이후 1순위 추가 후보 (6장).
+- FusedLocation, TTS, Gleo, NaviHelper는 시간 남으면... 6장 참고.
 
 ---
 
@@ -155,8 +158,11 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 
 ### A-3. 연습 메모 (`NoteRecorder`, `NoteClassifier`)
 
-- 주행 중 키워드 감지
-- 분류는 키워드 표로 합니다. 위에서부터 처음 맞는 것:
+- 주행 화면의 **큰 마이크 버튼**을 누르면 STT(`ON_DEVICE`)로 한 문장을 인식해 저장 (V2 통과)
+  - 참고 구현: `scratch/gain`의 `SttProbe.kt`
+  - 메모 시각은 `onStartedRecognition()`이 **처음** 호출된 시각 (부분 결과마다 여러 번 호출됨)
+  - 첫 인식은 모델 로딩으로 약 40초 걸리므로 화면이 열릴 때 미리 `initialize()`
+- 인식된 문장에서 키워드를 찾아 분류합니다. 위에서부터 처음 맞는 것:
 
 | 키워드 (공백 제거 후 포함) | 분류 |
 |---|---|
@@ -171,7 +177,8 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 
 ### A-4. 주행 화면 (`DrivingScreen`)
 
-- 주행 중 화면은 **"기록 중" 표시, 현재 속도, 종료 버튼만** 둡니다. 처음부터 단순하게 만들어 주행 중 조작 부담을 줄입니다.
+- 주행 중 화면은 **"기록 중" 표시, 현재 속도, 마이크 버튼, 종료 버튼만** 둡니다. 처음부터 단순하게 만들어 주행 중 조작 부담을 줄입니다.
+- Manifest의 Activity에 `distractionOptimized` 메타데이터를 꼭 넣습니다. 없으면 주행 중 "주행 중에는 사용할 수 없습니다"로 차단됩니다.
 
 ### A 완료 기준
 
@@ -270,7 +277,7 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 
 | 순서 | 브랜치 | 담당 | 의존 |
 |---|---|---|---|
-| 0 | V1, V2 사전 검증 | A | 없음 |
+| 0 | V1, V2 사전 검증 ✅ 완료 | A | 없음 |
 | 0 | `chore/add-room` (Room·Coroutines, Entity 1-3) | A | 없음. **가장 먼저 머지** |
 | 1 | `feature/trip-recorder` (A-1, A-2, A-5) + `feature/trip-replay` (A-4) | A | 0 |
 | 1 | `feature/trip-analyzer` (B-1~B-4, 단위 테스트) | B | 0 (가짜 데이터) |
@@ -285,7 +292,7 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 
 | 생략한 기능 | 이유 | 다시 넣을 때 필요한 것 |
 |---|---|---|
-| 브레이크·조향각·방향지시등 수집, **깜빡이 없이 회전** 감지 | Vehicle SDK 신호마다 지원 확인 + heading/조향각 기반 회전 감지가 복잡 | Vehicle `TurnSignal`·`SteeringWheel` 검증, FusedLocation heading |
+| 브레이크·조향각·방향지시등 수집, **깜빡이 없이 회전** 감지 | 회전 감지 규칙이 복잡 | ✅ 권한 사용 가능 확인, Virtual Console로 테스트 가능. 조향각만으로 회전 감지(15° 이상 2초 유지) + 방향지시등 확인이면 비교적 간단 → **MVP 이후 1순위** |
 | 회전 감지, 빠른 회전, 좌회전 전 긴 대기 | 회전 감지에 의존 | 위와 같음 |
 | 주차 구간 분석 (후진 횟수, 핸들 조작) | 후진 속도 부호 검증 필요, 규칙 복잡 | 후진 시 속도가 음수인지 검증, 조향각 |
 | FusedLocation (위치·속도 대체) | 지도 표시가 없고 속도는 재생기로 대체 가능 | `FUSED_LOCATION` 권한 |
@@ -294,7 +301,7 @@ enum class Skill { SMOOTH_ACCEL, BRAKING }   // 메모 분류는 NoteCategory로
 | Foreground Service (백그라운드 기록) | 시연은 앱을 띄운 상태로 진행 | `FOREGROUND_SERVICE_LOCATION` 권한 |
 | 자동 주행 시작·종료 감지 | 버튼으로 충분 | — |
 | 메모 ↔ 이벤트 자동 연결 | 회전·주차 감지가 없으면 연결 대상이 거의 없음 | 회전·주차 감지 |
-| `CarUxRestrictionsManager` 주행 제한 연동 | 주행 화면을 처음부터 단순하게 만들어 대신함 | 앱마켓 심사 시 필요하면 추가 |
+| `CarUxRestrictionsManager` 주행 제한 연동 | 주행 화면을 처음부터 단순하게 만들어 대신함 (단, `distractionOptimized` 메타데이터는 필수) | 앱마켓 심사 시 필요하면 추가 |
 | 퀘스트 만료(14일)·재출제 금지(7일)·기술 졸업 | 데모 기간에는 효과가 드러나지 않음 | — |
 | `quests.json` 외부 데이터화, NaviHelper 연습 장소 안내 | 부가 기능 | — |
 | 휴대폰 연동, 지도 표시, LLM 문장 다듬기 | 범위 밖 | 서버 / 지도 SDK |
