@@ -162,7 +162,7 @@ class DrivingSimulatorActivity : Activity() {
         movementHintView=text(coach,"",16f,Color.rgb(255,204,133)).apply {tag="sim_movement_hint"}
         stateView=text(coach,"",16f,muted).apply {tag="sim_state"}
         road=SimulatorRoadView(this,model).apply {tag="sim_road"}
-        coach.addView(road,LinearLayout.LayoutParams(-1,dp(if(wide)285 else 180)).apply {topMargin=dp(8)})
+        coach.addView(road,LinearLayout.LayoutParams(-1,dp(if(wide)440 else 300)).apply {topMargin=dp(8)})
         feedbackView=text(coach,"",17f,mint)
         val coachActions=row(coach)
         button(coachActions,"다시 듣기","sim_speak") {voice?.speak(model.instruction()) ?: toast("화면 안내를 확인해 주세요")}
@@ -252,7 +252,7 @@ class DrivingSimulatorActivity : Activity() {
         }
         movementHintView.visibility=if(movementHintView.text.isBlank())View.GONE else View.VISIBLE
         stateView.text="${model.gear}단 · ${"%.1f".format(java.util.Locale.US,model.speed*3.6)}km/h · 핸들 ${model.steering.roundToInt()}° · 깜빡이 ${when(model.signal){SimSignal.OFF->"꺼짐";SimSignal.LEFT->"왼쪽";SimSignal.RIGHT->"오른쪽"}}\n"+
-            "현재 ${model.currentLane}차로 → 목표 ${model.targetLane}차로 · ${model.lanesRemaining}개 남음"
+            model.laneStatus
         controlsStateView.text="액셀 ${model.accelerator.roundToInt()}% · 브레이크 ${model.brake.roundToInt()}% · 창문 ${model.windowOpen}% · 와이퍼 ${listOf("OFF","AUTO","LOW","HIGH")[model.wiper]}"
         wheel.angle=model.steering;wheel.target=model.targetSteering;wheel.invalidate()
         if(!steeringSlider.isPressed)steeringSlider.progress=model.steering.roundToInt()+450
@@ -287,7 +287,7 @@ class DrivingSimulatorActivity : Activity() {
     }
     private fun saveNewPractice() {
         val skillById=mapOf("prepare" to CoachSkill.PREPARATION,"lane1" to CoachSkill.LANE_CHANGE,"lane2" to CoachSkill.LANE_CHANGE,"lane3" to CoachSkill.LANE_CHANGE,
-            "intersection" to CoachSkill.INTERSECTION,"finish" to CoachSkill.FINISH)
+            "intersection" to CoachSkill.INTERSECTION)
         model.practices.forEach {practice->
             val skill=skillById[practice.id] ?: return@forEach
             val evidenceId="$tripId:${skill.name}"
@@ -300,8 +300,8 @@ class DrivingSimulatorActivity : Activity() {
     }
     private fun chooseScenario() {
         model.freeze();paused=true;pauseReason="시나리오를 선택하는 동안 잠시 멈췄어요."
-        AlertDialog.Builder(this).setTitle("차로 변경 방향 / 교차로 회전 방향")
-            .setItems(arrayOf("왼쪽 2개 차로 → 우회전","오른쪽 2개 차로 → 우회전","왼쪽 2개 차로 → 좌회전","오른쪽 2개 차로 → 좌회전")) {_,which->reset(which<2,which%2==1)}
+        AlertDialog.Builder(this).setTitle("도로 표시를 따르는 회전 연습")
+            .setItems(arrayOf("우회전: 1 → 2 → 3차로 → 우회전","좌회전: 3 → 2 → 1차로 → 좌회전")) {_,which->reset(which==0,which==0)}
             .setNegativeButton("계속하기") {_,_->paused=false}.setOnCancelListener {paused=false}.show()
     }
     private fun reset(right: Boolean,laneRight: Boolean) {

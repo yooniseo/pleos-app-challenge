@@ -155,6 +155,7 @@ open class CockpitSmokeRunner : Instrumentation() {
         click(a,"sim_auto")
         val deadline=android.os.SystemClock.elapsedRealtime()+180_000
         val stages=linkedSetOf<SimStage>();var complete=false;var maxSdkSpeed=0f
+        var physicalTurnLane=0;var stopLineClearance=0.0;var turnMidCaptured=false;val crosswalks=mutableSetOf<Int>()
         do {
             var stage=SimStage.PREPARE
             runOnMainSync {
@@ -162,13 +163,28 @@ open class CockpitSmokeRunner : Instrumentation() {
                 check(!a.pausedForDiagnostics()) {"Automatic playback paused at $stage"}
                 check(a.automaticForDiagnostics() || stage==SimStage.COMPLETE) {"Automatic playback stopped at $stage"}
                 maxSdkSpeed=maxOf(maxSdkSpeed,a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f)
+                val m=a.simulatorForDiagnostics()
+                if(stage==SimStage.TURN_CHECK) {
+                    physicalTurnLane=m.road.eastboundLane(m.y) ?: 0
+                    stopLineClearance=m.road.junctionX-18-(m.x+m.road.carHalfLength)
+                    check(physicalTurnLane==m.targetLane && stopLineClearance>0)
+                }
+                if(stage==SimStage.TURN || stage==SimStage.TURN_ALIGN) {
+                    m.road.mainCrosswalks.forEachIndexed {i,box->if(box.contains(m.x,m.y))crosswalks.add(i)}
+                }
             }
             if(stages.add(stage) && stage in setOf(SimStage.EXIT_TURN,SimStage.LANE_OUT,SimStage.TURN))capture("auto-${stage.name.lowercase()}.png")
+            if(stage==SimStage.TURN && !turnMidCaptured) {
+                var halfway=false
+                runOnMainSync {halfway=kotlin.math.abs(a.simulatorForDiagnostics().heading-Math.PI/2)>Math.PI/4}
+                if(halfway){capture("auto-turn-mid.png");turnMidCaptured=true}
+            }
             complete=stage==SimStage.COMPLETE
             if(!complete)Thread.sleep(300)
         } while(!complete && android.os.SystemClock.elapsedRealtime()<deadline)
         check(complete) {"Automatic playback did not finish: $stages"}
         check(maxSdkSpeed>0) {"No actual emulator speed observed"}
+        check(turnMidCaptured && crosswalks.containsAll(listOf(0,3))) {"Near/outgoing crosswalks not traversed: $crosswalks"}
         runOnMainSync {
             val m=a.simulatorForDiagnostics()
             check(m.lanesRemaining==0 && m.gear==SimGear.P && m.parkingBrake && m.stopped)
@@ -192,6 +208,8 @@ open class CockpitSmokeRunner : Instrumentation() {
         return JSONObject().apply {
             put("stages",org.json.JSONArray(stages.map {it.name}));put("maxActualSdkSpeedMps",maxSdkSpeed)
             put("complete",true);put("pausePromptVisible",true);put("manualOverride",true)
+            put("physicalTurnLane",physicalTurnLane);put("stopLineClearanceMetres",stopLineClearance)
+            put("crossedMainCrosswalks",org.json.JSONArray(crosswalks.sorted()))
         }
     }
     private fun consoleState(): JSONObject {

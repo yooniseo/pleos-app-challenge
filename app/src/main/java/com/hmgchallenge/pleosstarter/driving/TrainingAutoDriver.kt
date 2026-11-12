@@ -1,6 +1,6 @@
 package com.hmgchallenge.pleosstarter.driving
 
-/** Scripted inputs for the virtual training model only. Not a vehicle driving controller. */
+/** Authored playback for the virtual model only. It follows the same path that is drawn. */
 class TrainingAutoDriver {
     private var priorStage: SimStage?=null
     private var elapsed=0.0
@@ -14,40 +14,36 @@ class TrainingAutoDriver {
                 if(elapsed>=0.6)model.belt=true
                 if(elapsed>=1.2 && model.rain)model.wiper=2
                 if(elapsed>=1.8)model.setParkingBrake(false)
-                if(elapsed>=2.4)model.selectGear(SimGear.R)
+                if(elapsed>=2.4)model.selectGear(SimGear.D)
             }
-            SimStage.REVERSE->{
-                model.steer(0.0)
-                if(model.stageTravel>=3)model.pedals(0.0,100.0)else cruise(model)
-            }
+            SimStage.PARKING_EXIT->{model.steer(0.0);if(model.stageTravel>=3)model.pedals(0.0,100.0)else cruise(model)}
             SimStage.EXIT_PREPARE->{
                 model.pedals(0.0,80.0);model.selectGear(SimGear.D)
-                if(elapsed>=0.6)model.setSignal(SimSignal.RIGHT)
+                if(elapsed>=0.6)model.setSignal(model.expectedSignal)
                 if(elapsed>=1.4)model.checkMirrors()
             }
-            SimStage.EXIT_TURN,SimStage.LANE_OUT,SimStage.LANE_RETURN,SimStage.TURN->{
-                model.steer(model.targetSteering);cruise(model)
+            SimStage.EXIT_APPROACH,SimStage.APPROACH->{
+                model.steer(model.targetSteering);model.setSignal(model.expectedSignal)
+                val remaining=if(model.stage==SimStage.APPROACH)model.approachRemaining else model.exitApproachRemaining
+                if(remaining<=model.speed*model.speed/(2*5.2)+0.15)model.pedals(0.0,100.0)else cruise(model)
             }
-            SimStage.EXIT_ALIGN,SimStage.TURN_ALIGN->{model.steer(0.0);cruise(model)}
-            SimStage.LANE_PREPARE->{
-                model.steer(0.0);cruise(model)
-                if(elapsed>=0.4)model.setSignal(model.expectedSignal)
-                if(elapsed>=1.2)model.checkMirrors()
-            }
-            SimStage.APPROACH->{
-                model.steer(0.0);model.setSignal(model.expectedSignal)
-                if(model.stageTravel>=10)model.pedals(0.0,100.0)else cruise(model)
-            }
-            SimStage.TURN_CHECK->{
+            SimStage.EXIT_CHECK,SimStage.TURN_CHECK->{
                 model.pedals(0.0,80.0);model.setSignal(model.expectedSignal)
-                // These are visible, authored scenario assumptions, not camera recognition.
+                // Authored signals and pedestrians, never camera recognition.
                 if(elapsed>=1.2)model.green=true
                 if(elapsed>=2.4)model.pedestrian=false
                 if(elapsed>=3.2)model.checkMirrors()
             }
+            SimStage.EXIT_TURN,SimStage.LANE_OUT,SimStage.LANE_RETURN,SimStage.TURN,
+            SimStage.EXIT_ALIGN,SimStage.TURN_ALIGN->{model.steer(model.targetSteering);cruise(model)}
+            SimStage.LANE_PREPARE->{
+                model.steer(model.targetSteering);cruise(model)
+                if(elapsed>=0.4)model.setSignal(model.expectedSignal)
+                if(elapsed>=1.2)model.checkMirrors()
+            }
             SimStage.FINAL_STOP->{
-                model.steer(0.0)
-                if(model.stageTravel>=3)model.pedals(0.0,100.0)else cruise(model)
+                model.steer(model.targetSteering)
+                if(model.stageTravel>=6)model.pedals(0.0,100.0)else cruise(model)
             }
             SimStage.SECURE->{
                 model.pedals(0.0,80.0);model.selectGear(SimGear.P)
