@@ -20,6 +20,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity android:name=".driving.DrivingSimulatorActivity" android:exported="false"
+            android:taskAffinity="com.hmgchallenge.pleosstarter.drivertraining"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout" android:label="운전석 시뮬레이터" />
         <activity android:name=".quests.QuestActivity" android:exported="true"
             android:label="@string/quest_app_name">

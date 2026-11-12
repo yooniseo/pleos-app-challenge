@@ -15,16 +15,27 @@ import java.net.URL
 /** Touch controls -> Virtual Console state -> actual speed/blinker SDK callbacks. Emulator only. */
 open class CockpitSmokeRunner : Instrumentation() {
     override fun onStart() {
-        val result=Bundle();var a: DrivingSimulatorActivity?=null;var code=Activity.RESULT_OK
+        val result=Bundle();var a: DrivingSimulatorActivity?=null;var launcher: Activity?=null;var code=Activity.RESULT_OK
         val demo=QuestStore(targetContext,true);val before=demo.load();val personal=QuestStore(targetContext,false).load()
         val simulatorPrefs=targetContext.getSharedPreferences("driver_simulator",0)
         val priorReport=simulatorPrefs.getString("last_report",null)
+        val journal=File(targetContext.filesDir,"driving-coach-events.jsonl")
+        val priorJournal=journal.takeIf {it.exists()}?.readBytes()
         try {
             check(EmulatorCockpitBridge.isAllowed(targetContext)) {"Debug emulator required"}
             runCatching {uiAutomation.grantRuntimePermission(targetContext.packageName,"android.car.permission.CAR_SPEED")}
-            a=startActivitySync(Intent(targetContext,DrivingSimulatorActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as DrivingSimulatorActivity
+            val monitor=addMonitor(DrivingSimulatorActivity::class.java.name,null,false)
+            launcher=startActivitySync(Intent(targetContext,DrivingCoachActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK).putExtra("open_cockpit",true))
+            a=checkNotNull(waitForMonitorWithTimeout(monitor,10_000)) as DrivingSimulatorActivity
+            removeMonitor(monitor)
             waitForIdleSync();Thread.sleep(1_000)
+            var taskRoot=""
+            runOnMainSync {
+                val tasks=(a.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).appTasks
+                taskRoot=tasks.first {it.taskInfo.taskId==a.taskId}.taskInfo.baseActivity?.className.orEmpty()
+            }
+            check(taskRoot==DrivingSimulatorActivity::class.java.name) {"Cockpit inherited a parked-only task root: $taskRoot"}
             capture("cockpit-ready.png")
             click(a,"sim_brake");Thread.sleep(250)
             runOnMainSync {check(a.simulatorForDiagnostics().brake==80.0)}
@@ -88,13 +99,16 @@ open class CockpitSmokeRunner : Instrumentation() {
             check(after.getJSONObject("lights").getString("turn_signal_mode")=="Off")
             check(QuestStore(targetContext,false).load()==personal)
             val proof=JSONObject().apply {
-                put("result","PASS_COCKPIT_CONTROLS");put("reverseModelMeters",reverseDistance);put("during",during);put("forward",forward);put("after",after);put("sdk",JSONObject(sdk))
+                put("result","PASS_COCKPIT_CONTROLS");put("launchPath","COACH_ENTRY");put("taskRoot",taskRoot)
+                put("reverseModelMeters",reverseDistance);put("during",during);put("forward",forward);put("after",after);put("sdk",JSONObject(sdk))
             }
             File(targetContext.filesDir,"cockpit-proof.json").writeText(proof.toString(2))
             result.putString("result","PASS_COCKPIT_CONTROLS")
         } catch(error: Throwable) {code=Activity.RESULT_CANCELED;result.putString("result","FAIL: ${error.stackTraceToString()}")}
         finally {
-            a?.let {runOnMainSync {it.finish()}};Thread.sleep(3_000);demo.save(before)
+            a?.let {runOnMainSync {it.finish()}};launcher?.let {runOnMainSync {it.finish()}}
+            Thread.sleep(3_000);demo.save(before)
+            if(priorJournal==null)journal.delete() else journal.writeBytes(priorJournal)
             simulatorPrefs.edit().apply {if(priorReport==null)remove("last_report")else putString("last_report",priorReport)}.commit()
         }
         finish(code,result)

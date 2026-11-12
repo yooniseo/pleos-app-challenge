@@ -119,7 +119,7 @@ class DrivingCoachActivity : Activity() {
         updateDriving()
         if(intent.getBooleanExtra("open_cockpit",false) && EmulatorCockpitBridge.isAllowed(this)) {
             intent.removeExtra("open_cockpit")
-            handler.post {if(active)startActivity(Intent(this,DrivingSimulatorActivity::class.java))}
+            handler.post {if(active)openSimulator()}
         }
     }
 
@@ -228,7 +228,7 @@ class DrivingCoachActivity : Activity() {
         button(tabs,"주행 안내","tab_driving") { page="driving";buildPage() }
         button(tabs,"운전석 체험","simulator") {
             if(!detailsAllowed()) {blocked();return@button}
-            stopPlayback();startActivity(Intent(this,DrivingSimulatorActivity::class.java))
+            stopPlayback();openSimulator()
         }
         button(tabs,"주차 연습","tab_parking") { if(detailsAllowed()) { stopPlayback();page="parking";buildPage() } else blocked() }
         button(tabs,"안내 설정","settings") { showSettings() }
@@ -689,6 +689,11 @@ class DrivingCoachActivity : Activity() {
     }
 
     private fun detailsAllowed()=gate.allows(demo && !packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE))
+    private fun openSimulator() {
+        // Pleos labels an embedded app task by its root Activity. The debug cockpit must
+        // have its own root, instead of inheriting the parked-only coach task's label.
+        startActivity(Intent(this,DrivingSimulatorActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     private fun enforceDetailGate() {
         if(!detailsAllowed()) {
             if(playing) stopPlayback()
