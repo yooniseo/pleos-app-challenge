@@ -1,0 +1,123 @@
+package com.hmgchallenge.pleosstarter.driving
+
+import android.app.Activity
+import android.app.Instrumentation
+import android.content.Intent
+import android.graphics.Bitmap
+import android.os.Bundle
+import android.widget.Button
+import com.hmgchallenge.pleosstarter.quests.QuestStore
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+
+/** Touch controls -> Virtual Console state -> actual speed/blinker SDK callbacks. Emulator only. */
+open class CockpitSmokeRunner : Instrumentation() {
+    override fun onStart() {
+        val result=Bundle();var a: DrivingSimulatorActivity?=null;var code=Activity.RESULT_OK
+        val demo=QuestStore(targetContext,true);val before=demo.load();val personal=QuestStore(targetContext,false).load()
+        val simulatorPrefs=targetContext.getSharedPreferences("driver_simulator",0)
+        val priorReport=simulatorPrefs.getString("last_report",null)
+        try {
+            check(EmulatorCockpitBridge.isAllowed(targetContext)) {"Debug emulator required"}
+            runCatching {uiAutomation.grantRuntimePermission(targetContext.packageName,"android.car.permission.CAR_SPEED")}
+            a=startActivitySync(Intent(targetContext,DrivingSimulatorActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as DrivingSimulatorActivity
+            waitForIdleSync();Thread.sleep(1_000)
+            capture("cockpit-ready.png")
+            click(a,"sim_brake");Thread.sleep(250)
+            runOnMainSync {check(a.simulatorForDiagnostics().brake==80.0)}
+            click(a,"sim_brake")
+            runOnMainSync {check(a.simulatorForDiagnostics().brake==0.0)}
+            click(a,"sim_accelerator");click(a,"sim_brake")
+            runOnMainSync {check(a.simulatorForDiagnostics().accelerator==0.0 && a.simulatorForDiagnostics().brake==80.0)}
+            click(a,"sim_pedals_release")
+            runOnMainSync {check(a.simulatorForDiagnostics().accelerator==0.0 && a.simulatorForDiagnostics().brake==0.0)}
+            click(a,"sim_belt");touch(a,"sim_brake",true)
+            click(a,"sim_parking_brake");click(a,"sim_gear_R");Thread.sleep(150)
+            touch(a,"sim_brake",false)
+            click(a,"sim_window_open");click(a,"sim_wiper");click(a,"sim_wiper")
+            click(a,"sim_signal_left")
+            var paused=false
+            val cameraDeadline=android.os.SystemClock.elapsedRealtime()+5_000
+            do {
+                runOnMainSync {paused=a.pausedForDiagnostics()}
+                if(!paused)Thread.sleep(200)
+            } while(!paused && android.os.SystemClock.elapsedRealtime()<cameraDeadline)
+            if(paused) {
+                saveImage("cockpit-oem-camera.png")
+                sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);Thread.sleep(800)
+            }
+            runOnMainSync {paused=a.pausedForDiagnostics()}
+            if(paused)click(a,"sim_pause")
+            repeat(3){click(a,"sim_steer_right")}
+            touch(a,"sim_accelerator",true);Thread.sleep(3_500)
+            val during=consoleState()
+            val controls=during.getJSONObject("controls");val body=during.getJSONObject("body")
+            check(during.getJSONObject("gear").getJSONObject("actual").getString("value")=="Park")
+            var reverseDistance=0.0
+            runOnMainSync {reverseDistance=a.simulatorForDiagnostics().distance}
+            var debug=""
+            runOnMainSync {val m=a.simulatorForDiagnostics();debug="stage=${m.stage} gear=${m.gear} belt=${m.belt} parking=${m.parkingBrake} pedal=${m.accelerator}/${m.brake} paused=${a.pausedForDiagnostics()}"}
+            check(reverseDistance>0) {"Reverse model did not move: $debug root=${uiAutomation.rootInActiveWindow?.packageName}"}
+            check(body.getJSONObject("windows").getInt("front_left")==50)
+            check(body.getJSONObject("wipers").getJSONObject("front").getString("mode")=="Low")
+            check(during.getJSONObject("lights").getString("turn_signal_mode")=="BlinkLeft")
+            var sdk=emptyMap<String,String>()
+            runOnMainSync {sdk=a.sdkForDiagnostics()}
+            check(sdk["indicator"]=="LEFT") {"Actual blinker callback not received: $sdk"}
+            capture("cockpit-controls.png")
+            touch(a,"sim_accelerator",false);touch(a,"sim_brake",true);Thread.sleep(1_000);touch(a,"sim_brake",false)
+            touch(a,"sim_brake",true);click(a,"sim_gear_D");touch(a,"sim_brake",false)
+            touch(a,"sim_accelerator",true);Thread.sleep(3_500)
+            val forward=consoleState()
+            check(forward.getJSONObject("gear").getJSONObject("actual").getString("value")=="Drive")
+            check(forward.getJSONObject("controls").getInt("accelerator_pct")==45)
+            check(forward.getJSONObject("controls").getInt("steering_deg")==45)
+            check(forward.getJSONObject("controls").getInt("speed_kph")>0)
+            runOnMainSync {sdk=a.sdkForDiagnostics()}
+            check((sdk["speedMps"]?.toFloatOrNull() ?: 0f)>0f) {"Actual speed callback not received: $sdk"}
+            capture("cockpit-forward.png")
+            touch(a,"sim_accelerator",false);touch(a,"sim_brake",true);Thread.sleep(1_000);touch(a,"sim_brake",false)
+            runOnMainSync {check(a.simulatorForDiagnostics().stopped);a.finish()}
+            Thread.sleep(2_500)
+            val after=consoleState()
+            check(after.getJSONObject("controls").getInt("speed_kph")==0)
+            check(after.getJSONObject("gear").getJSONObject("actual").getString("value")=="Park")
+            check(after.getJSONObject("lights").getString("turn_signal_mode")=="Off")
+            check(QuestStore(targetContext,false).load()==personal)
+            val proof=JSONObject().apply {
+                put("result","PASS_COCKPIT_CONTROLS");put("reverseModelMeters",reverseDistance);put("during",during);put("forward",forward);put("after",after);put("sdk",JSONObject(sdk))
+            }
+            File(targetContext.filesDir,"cockpit-proof.json").writeText(proof.toString(2))
+            result.putString("result","PASS_COCKPIT_CONTROLS")
+        } catch(error: Throwable) {code=Activity.RESULT_CANCELED;result.putString("result","FAIL: ${error.stackTraceToString()}")}
+        finally {
+            a?.let {runOnMainSync {it.finish()}};Thread.sleep(3_000);demo.save(before)
+            simulatorPrefs.edit().apply {if(priorReport==null)remove("last_report")else putString("last_report",priorReport)}.commit()
+        }
+        finish(code,result)
+    }
+    private fun consoleState(): JSONObject {
+        val c=URL("http://127.0.0.1:8088/vehicle/state").openConnection() as HttpURLConnection
+        try {c.connectTimeout=2_000;c.readTimeout=2_000;check(c.responseCode==200);return JSONObject(c.inputStream.bufferedReader().use {it.readText()})}
+        finally {c.disconnect()}
+    }
+    private fun click(a: Activity,key: String) {runOnMainSync {check(a.window.decorView.findViewWithTag<Button>(key).performClick())};waitForIdleSync()}
+    private fun touch(a: DrivingSimulatorActivity,key: String,down: Boolean) {runOnMainSync {
+        val model=a.simulatorForDiagnostics()
+        val enabled=if(key=="sim_brake")model.brake>0 else model.accelerator>0
+        if(enabled!=down)check(a.window.decorView.findViewWithTag<Button>(key).performClick())
+    }}
+    private fun capture(name: String) {
+        val deadline=android.os.SystemClock.elapsedRealtime()+15_000
+        while(uiAutomation.rootInActiveWindow?.packageName!=targetContext.packageName && android.os.SystemClock.elapsedRealtime()<deadline)Thread.sleep(250)
+        check(uiAutomation.rootInActiveWindow?.packageName==targetContext.packageName) {"Cockpit is not foreground"}
+        saveImage(name)
+    }
+    private fun saveImage(name: String) {
+        val image=checkNotNull(uiAutomation.takeScreenshot());val dir=File(targetContext.filesDir,"coach-smoke").apply {mkdirs()}
+        File(dir,name).outputStream().use {check(image.compress(Bitmap.CompressFormat.PNG,100,it))};image.recycle()
+    }
+}

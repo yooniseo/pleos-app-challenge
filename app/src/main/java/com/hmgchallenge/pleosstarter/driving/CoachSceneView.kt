@@ -5,7 +5,9 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PathMeasure
 import android.graphics.RectF
+import android.animation.ValueAnimator
 import android.view.View
 
 /** Educational scene, deliberately not a live camera, map, or obstacle detector. */
@@ -15,9 +17,48 @@ class CoachSceneView(context: Context) : View(context) {
     var parkingStep = 0
     var indicator = Indicator.UNKNOWN
     var demo = true
+    var demoStep = DemoDriveStep.SIGNAL
+    var demoObstruction = false
+    var laneCount=3
+    var currentLane=1
+    private var carX: Float?=null
+    private var carY=302f
+    private var carAngle=0f
+    private var poseKey=""
+    private var animator: ValueAnimator?=null
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val mint = Color.rgb(101, 233, 197)
     init { contentDescription = "설명용 도식 · 실제 도로와 차량을 추적하지 않음" }
+    private fun laneX(lane: Int)=254f+(lane-0.5f)*166f/laneCount
+    fun refreshPose() {
+        val key="$phase:$currentLane:$laneCount"
+        if(key==poseKey) return
+        poseKey=key
+        val x=when(phase) {CoachPhase.INTERSECTION_EXIT,CoachPhase.FINISHED->529f;else->laneX(currentLane)}
+        val y=when(phase) {CoachPhase.RIGHT_TURN->244f;CoachPhase.INTERSECTION_EXIT,CoachPhase.FINISHED->156f;else->302f}
+        val angle=if(phase==CoachPhase.INTERSECTION_EXIT || phase==CoachPhase.FINISHED) 90f else 0f
+        animator?.cancel()
+        val oldX=carX
+        if(oldX==null || !demo) {carX=x;carY=y;carAngle=angle;invalidate();return}
+        val oldY=carY;val oldAngle=carAngle
+        val turning=angle==90f && oldAngle==0f
+        val turnPath=if(turning) PathMeasure(Path().apply {
+            moveTo(oldX,oldY);cubicTo(oldX,156f,460f,156f,x,y)
+        },false) else null
+        val position=FloatArray(2);val tangent=FloatArray(2)
+        animator=ValueAnimator.ofFloat(0f,1f).apply {
+            duration=1000
+            addUpdateListener {
+                val t=it.animatedValue as Float
+                if(turnPath!=null) {
+                    turnPath.getPosTan(turnPath.length*t,position,tangent)
+                    carX=position[0];carY=position[1]
+                    carAngle=Math.toDegrees(kotlin.math.atan2(tangent[1].toDouble(),tangent[0].toDouble())).toFloat()+90f
+                } else {carX=oldX+(x-oldX)*t;carY=oldY+(y-oldY)*t;carAngle=oldAngle+(angle-oldAngle)*t}
+                invalidate()
+            };start()
+        }
+    }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val scale = minOf(width / 640f, height / 350f)
@@ -54,17 +95,49 @@ class CoachSceneView(context: Context) : View(context) {
         text(c,if(demo)"이번 교차로" else "우회전 흐름 예시",435f,87f,19f,mint)
         p.color = mint; p.style=Paint.Style.STROKE; p.strokeWidth=3f
         c.drawRoundRect(RectF(432f,99f,626f,212f),12f,12f,p); p.style=Paint.Style.FILL
-        for (y in 220..340 step 32) line(c,floatArrayOf(335f,y.toFloat(),335f,y+17f),Color.rgb(168,184,192))
+        if(demo) {
+            rect(c,254f+(laneCount-1)*166f/laneCount,225f,420f,350f,Color.rgb(47,91,87))
+            for(lane in 1 until laneCount) for(y in 230..340 step 28) {
+                val x=254f+lane*166f/laneCount
+                line(c,floatArrayOf(x,y.toFloat(),x,y+14f),Color.rgb(168,184,192),2f)
+            }
+            for(lane in 1..laneCount) text(c,"$lane",laneX(lane)-4,345f,13f)
+            text(c,"목표 ${laneCount}차로",435f,285f,16f,mint)
+        } else for (y in 220..340 step 32) line(c,floatArrayOf(335f,y.toFloat(),335f,y+17f),Color.rgb(168,184,192))
         for (x in 268..403 step 23) rect(c,x.toFloat(),211f,x+12f,223f,Color.rgb(216,229,228))
-        val path=Path().apply { moveTo(295f,330f); cubicTo(295f,285f,376f,280f,376f,234f); lineTo(376f,180f); quadTo(376f,156f,412f,156f); lineTo(582f,156f) }
+        val routeX=if(demo) laneX(laneCount) else 376f
+        val startX=if(demo) laneX(currentLane) else 295f
+        val path=Path().apply { moveTo(startX,330f); cubicTo(startX,285f,routeX,280f,routeX,234f); lineTo(routeX,180f); quadTo(routeX,156f,432f,156f); lineTo(582f,156f) }
         p.color=mint; p.alpha=130; p.strokeWidth=7f; p.style=Paint.Style.STROKE;c.drawPath(path,p);p.alpha=255;p.style=Paint.Style.FILL
-        when(phase) {
+        if(demo && carX!=null) car(c,carX!!,carY,carAngle) else when(phase) {
             CoachPhase.LANE_PREPARATION -> car(c,295f,302f)
             CoachPhase.RIGHT_TURN -> car(c,376f,244f)
             CoachPhase.INTERSECTION_EXIT,CoachPhase.FINISHED -> car(c,529f,156f,90f)
             else -> car(c,295f,302f)
         }
+        if(demo && phase!=CoachPhase.FINISHED) {
+            val amber=Color.rgb(255,191,103)
+            if(demoStep in setOf(DemoDriveStep.MIRROR,DemoDriveStep.LANE_CHANGE)) {
+                rect(c,38f,32f,228f,87f,Color.rgb(13,25,34),8f)
+                text(c,if(demoObstruction) "접근 차량 가정" else "미러 확인 가정",50f,58f,16f,amber)
+                text(c,"실제 카메라 영상 아님",50f,78f,12f,Color.rgb(177,195,204))
+                if(demoObstruction) {
+                    rect(c,356f,278f,389f,330f,amber,7f)
+                    text(c,"접근 차량 가정",435f,250f,16f,amber)
+                }
+            }
+            if(demoStep in setOf(DemoDriveStep.STOP,DemoDriveStep.SURROUNDINGS,DemoDriveStep.TURN)) {
+                rect(c,435f,18f,619f,67f,Color.rgb(13,25,34),8f)
+                text(c,if(demoStep==DemoDriveStep.STOP) "신호 앞 정지 가정" else "신호·보행자 확인",447f,48f,17f,amber)
+                if(demoObstruction) {
+                    p.color=amber;c.drawCircle(358f,216f,9f,p)
+                    line(c,floatArrayOf(358f,225f,358f,246f,345f,232f,370f,232f,358f,246f,347f,259f,358f,246f,369f,259f),amber)
+                    text(c,"보행자 가정 · 대기",435f,250f,16f,amber)
+                }
+            }
+        }
     }
+    override fun onDetachedFromWindow() {animator?.cancel();super.onDetachedFromWindow()}
     private fun parking(c: Canvas) {
         val parallel=parking==ParkingStyle.PARALLEL
         rect(c,22f,20f,618f,330f,Color.rgb(34,54,63),20f)

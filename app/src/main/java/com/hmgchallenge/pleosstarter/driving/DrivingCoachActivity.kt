@@ -3,6 +3,7 @@ package com.hmgchallenge.pleosstarter.driving
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -52,7 +53,33 @@ class DrivingCoachActivity : Activity() {
     private var routeView: TextView? = null
     private var liveView: TextView? = null
     private var scene: CoachSceneView? = null
+    private val demoButtons = linkedMapOf<DemoDriveStep,Button>()
+    private var demoStepView: TextView? = null
+    private var demoObstructionButton: Button? = null
+    private var questBridge: QuestCoachBridge? = null
+    private var questStatusView: TextView? = null
+    private var goalView: TextView? = null
+    private var feedbackView: TextView? = null
+    private var voiceStatusView: TextView? = null
     private var lastSpokenKey: String? = null
+    private var mapView: CoachMapView?=null
+    private var mapCaption: TextView?=null
+    private var laneView: TextView?=null
+    private var vehicleView: TextView?=null
+    private var vehicleSource: VehicleCoachSource?=null
+    private var vehicleState=VehicleCoachState()
+    private var routeClient: ReferenceRouteClient?=null
+    private var referenceRoute: ReferenceRoute?=null
+    private var mapStatus="지도 연결 중"
+    private var referenceStatus=""
+    private var showMap=true
+    private var livePosition: GeoPoint?=null
+    private var liveHeading=0.0
+    private var destination: GeoPoint?=null
+    private var destinationName=""
+    private var activeRouteId=""
+    private var lanePlan: DriverLanePlan?=null
+    private var lastMapProgress=-1.0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,9 +92,16 @@ class DrivingCoachActivity : Activity() {
     }
 
     private fun createEngine() {
+        questBridge?.close();questBridge=null
+        if(CoachHostBindings.questPort===UnconnectedQuestPort) {
+            runCatching { QuestCoachBridge(this,demo,intent.getStringExtra("quest_trip_id")) {
+                handler.post {if(active && ::engine.isInitialized) {engine.preferences=repository.preferences();updateDriving()}}
+            } }.onSuccess {questBridge=it}.onFailure {statuses["퀘스트"]="퀘스트 저장소 연결 실패 · 기존 기록 보존"}
+        }
+        repository.questPort=questBridge ?: CoachHostBindings.questPort
         engine = CoachEngine(demo, { event ->
             runCatching { repository.append(event) }.onFailure { statuses["기록"] = "저장 실패 · ${it.javaClass.simpleName}" }
-        }, tripId = CoachHostBindings.activeTripId?.takeIf { !demo && it.isNotBlank() } ?: UUID.randomUUID().toString())
+        }, tripId = questBridge?.tripId ?: CoachHostBindings.activeTripId?.takeIf { !demo && it.isNotBlank() } ?: UUID.randomUUID().toString())
         engine.preferences = repository.preferences()
         if (demo) engine.startDemo()
         lastSpokenKey = null
@@ -77,10 +111,16 @@ class DrivingCoachActivity : Activity() {
     override fun onStart() {
         super.onStart(); active = true
         if (!demo && engine.phase == CoachPhase.CANCELLED) createEngine()
+        engine.preferences=repository.preferences()
         startSources()
+        if(demo && referenceRoute==null) loadReferenceRoute()
         handler.post(tick)
         if (demo && playing) handler.postDelayed(advanceDemo, 7_000)
         updateDriving()
+        if(intent.getBooleanExtra("open_cockpit",false) && EmulatorCockpitBridge.isAllowed(this)) {
+            intent.removeExtra("open_cockpit")
+            handler.post {if(active)startActivity(Intent(this,DrivingSimulatorActivity::class.java))}
+        }
     }
 
     private val tick = object : Runnable {
@@ -114,10 +154,21 @@ class DrivingCoachActivity : Activity() {
             override fun onRouteInvalidated(reason: String) {
                 if (!valid(token)) return
                 engine.cancel(reason); voice?.stop(); lastSpokenKey = null
+                clearMapRoute()
                 statuses["상황"] = reason; updateDriving()
             }
             override fun onArrival() { if (valid(token)) statuses["도착"] = "도착했어요 · 완전히 정차한 후 주차 마무리를 확인해 주세요" }
             override fun onStatus(channel: String, message: String) { if (valid(token)) { statuses[channel] = message; updateDriving() } }
+            override fun onPosition(point: GeoPoint,heading: Double,routeId: String) {
+                if(!valid(token))return
+                livePosition=point;liveHeading=heading;activeRouteId=routeId
+                mapView?.setPosition(point,heading,referenceRoute==null)
+            }
+            override fun onDestination(point: GeoPoint,name: String) {
+                if(!valid(token))return
+                if(destination!=null && destination!=point)clearMapRoute()
+                destination=point;destinationName=name;updateDriving(false)
+            }
         },runtimeEvidence::record).also { it.start() }
         }
         try {
@@ -130,6 +181,9 @@ class DrivingCoachActivity : Activity() {
         try {
             voice = PleosCoachVoice(this,{ message -> if (valid(token)) statuses["음성"] = message },runtimeEvidence::record).also { it.start() }
         } catch (error: Exception) { statuses["음성"] = "음성 서비스 연결 실패 · ${error.javaClass.simpleName}" }
+        vehicleSource=VehicleCoachSource(this,{state->if(valid(token)) {
+            vehicleState=state;updateDriving(false)
+        }},{message->if(valid(token)) {statuses["차량 상호작용"]=message;toast(message);updateDriving(false)}},runtimeEvidence::record).also {it.start()}
     }
 
     private fun startSpeed(token: Int) {
@@ -154,11 +208,16 @@ class DrivingCoachActivity : Activity() {
         speedSource?.stop(); speedSource = null
         detailSource?.stop(); detailSource = null
         voice?.release(); voice = null
+        vehicleSource?.stop();vehicleSource=null;vehicleState=VehicleCoachState()
         gate.uxAllowed = false; gate.updateSpeed(null)
     }
 
     private fun buildPage() {
         titleView=null;cueView=null;lookView=null;signalView=null;routeView=null;liveView=null;scene=null
+        demoButtons.clear();demoStepView=null;demoObstructionButton=null
+        questStatusView=null;goalView=null
+        feedbackView=null;voiceStatusView=null
+        mapView=null;mapCaption=null;laneView=null;vehicleView=null;lastMapProgress=-1.0
         content = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(24),dp(14),dp(24),dp(24)) }
         val scroll = ScrollView(this).apply { setBackgroundColor(bg); isFillViewport=true; addView(content) }
         val header = row(content)
@@ -167,10 +226,17 @@ class DrivingCoachActivity : Activity() {
         content.addView(label("한 걸음씩, 함께 운전해요",27f).apply { setTypeface(null,Typeface.BOLD) })
         val tabs = row(content)
         button(tabs,"주행 안내","tab_driving") { page="driving";buildPage() }
+        button(tabs,"운전석 체험","simulator") {
+            if(!detailsAllowed()) {blocked();return@button}
+            stopPlayback();startActivity(Intent(this,DrivingSimulatorActivity::class.java))
+        }
         button(tabs,"주차 연습","tab_parking") { if(detailsAllowed()) { stopPlayback();page="parking";buildPage() } else blocked() }
         button(tabs,"안내 설정","settings") { showSettings() }
-        content.addView(label(repository.focusedGoal()?.let { "오늘 목표 · $it" } ?: "내 속도로 연습해요 · 퀘스트 연결 준비됨",14f,muted))
-        if(page=="parking") buildParking() else buildDriving()
+        button(tabs,"퀘스트 · 목표","quests") { openQuests() }
+        button(tabs,"주행 피드백","feedback") { if(detailsAllowed()) {stopPlayback();page="feedback";buildPage()} else blocked() }
+        goalView=label("",14f,muted);content.addView(goalView)
+        questStatusView=label("",14f,mint);content.addView(questStatusView)
+        when(page) {"parking"->buildParking();"feedback"->buildFeedback();else->buildDriving()}
         setContentView(scroll)
         updateDriving()
     }
@@ -182,9 +248,26 @@ class DrivingCoachActivity : Activity() {
         }
         content.addView(body)
         val picture = card(body)
+        val mapTabs=row(picture)
+        button(mapTabs,if(showMap) "도로 도식 보기" else "지도 보기","map_toggle") {showMap=!showMap;buildPage()}
+        button(mapTabs,"경로 불러오기","map_route") {if(detailsAllowed())loadReferenceRoute() else blocked()}
+        if(showMap) {
+            mapView=CoachMapView(this).apply {
+                tag="coach_map";onMapStatus={mapStatus=it;updateMapCaption()}
+                referenceRoute?.let {setRoute(it)}
+                if(!demo)livePosition?.let {setPosition(it,liveHeading,referenceRoute==null)}
+            }
+            picture.addView(mapView,LinearLayout.LayoutParams(-1,dp(if(resources.configuration.screenWidthDp>=760)300 else 225)))
+            mapCaption=label("",12f,muted);picture.addView(mapCaption)
+            laneView=label("",17f,mint);picture.addView(laneView)
+            val mapActions=row(picture)
+            button(mapActions,"차로 계획 지정","lane_plan") {showLanePlan()}
+            button(mapActions,"지도 다시 불러오기","map_retry") {mapView?.retry()}
+        }
         scene=CoachSceneView(this).apply { tag="coach_scene"; demo=this@DrivingCoachActivity.demo }
+        scene?.visibility=if(showMap)View.GONE else View.VISIBLE
         picture.addView(scene,LinearLayout.LayoutParams(-1,dp(if(resources.configuration.screenWidthDp>=760) 300 else 225)))
-        picture.addView(label(if(demo) "설명용 도식 · 작은 진입로와 이번 교차로를 구분해요" else "설명용 도식 · 실제 지도나 장애물 감지 화면이 아니에요",12f,muted))
+        if(!showMap)picture.addView(label(if(demo) "설명용 도식 · 작은 진입로와 이번 교차로를 구분해요" else "설명용 도식 · 실제 지도나 장애물 감지 화면이 아니에요",12f,muted))
         val coaching = card(body)
         coaching.addView(label("지금 필요한 한 가지",14f,mint))
         titleView=label("",23f).apply { setTypeface(null,Typeface.BOLD) }; coaching.addView(titleView)
@@ -192,6 +275,7 @@ class DrivingCoachActivity : Activity() {
         lookView=label("",15f,muted);coaching.addView(lookView)
         signalView=label("",17f,Color.rgb(255,204,133));coaching.addView(signalView)
         routeView=label("",14f,muted);coaching.addView(routeView)
+        feedbackView=label("",16f,mint);coaching.addView(feedbackView)
         if(body.orientation==LinearLayout.HORIZONTAL) {
             picture.layoutParams=LinearLayout.LayoutParams(0,-2,1.05f).apply { rightMargin=dp(14) }
             coaching.layoutParams=LinearLayout.LayoutParams(0,-2,1f)
@@ -200,18 +284,65 @@ class DrivingCoachActivity : Activity() {
         button(actions,"다시 듣기","repeat") { handleCoachCommand("다시 말해줘") }
         button(actions,"설명 멈춤","stop_voice") { handleCoachCommand("설명 멈춰") }
         button(actions,"이 상황 기억","note") { engine.noteDifficulty(); toast("주행 후 돌아볼 수 있도록 기록했어요") }
+        button(actions,"음성 켜기 / 끄기","voice_toggle") {
+            if(!detailsAllowed()) {blocked();return@button}
+            val value=engine.preferences.copy(voiceEnabled=!engine.preferences.voiceEnabled)
+            repository.savePreferences(value);engine.preferences=repository.preferences()
+            if(engine.preferences.voiceEnabled) voice?.speak("주행 코치 음성 안내를 켰어요.") else voice?.stop()
+            updateDriving(false)
+        }
+        voiceStatusView=label("",13f,muted);content.addView(voiceStatusView)
+        val vehicleCard=card(content)
+        vehicleCard.addView(label("차량과 함께 준비해요 · 실제 차량 상태",14f,mint))
+        vehicleView=label("",15f);vehicleCard.addView(vehicleView)
+        val vehicleActions=row(vehicleCard)
+        button(vehicleActions,"출발 전 상태 듣기","vehicle_check") {
+            val text=vehicleState.summary()+". "+vehicleState.cue(detailsAllowed())
+            if(engine.preferences.voiceEnabled)voice?.speak(text);toast(text)
+        }
+        button(vehicleActions,"정차 후 조명 응원 요청","vehicle_light") {
+            vehicleSource?.pulse {active && detailsAllowed() && vehicleState.gear=="P"} ?: toast("Pleos 차량 환경에서 체험할 수 있어요")
+        }
         if(demo) {
             val controls=card(content)
-            controls.addView(label("시나리오 체험 · 실제 차량 제어 없음",14f,mint))
+            controls.addView(label("행동 버튼 시뮬레이션 · 실제 차량 제어 없음",14f,mint))
+            demoStepView=label("",15f);controls.addView(demoStepView)
+            controls.addView(label("미러·카메라·신호는 사용자 확인을 가정해요. 실제 영상 분석이나 통행 가능 판정이 아니에요.",12f,muted))
+            val lanes=row(controls)
+            listOf(2 to 1,3 to 1,4 to 2).forEach {(count,start)->
+                button(lanes,"체험 ${count}차로 · ${start}→${count}","demo_lanes_$count") {
+                    if(!detailsAllowed()) {blocked();return@button}
+                    if(!engine.configureDemoLanes(count,start)) toast("처음부터를 누른 뒤 체험 도로를 선택해 주세요")
+                    updateDriving(false)
+                }
+            }
+            val columns=if(resources.configuration.screenWidthDp>=760) 4 else 2
+            DemoDriveStep.values().filter {it!=DemoDriveStep.FINISHED}.toList().chunked(columns).forEach {steps->
+                val actionRow=row(controls)
+                steps.forEach {step->
+                    demoButtons[step]=button(actionRow,"${step.ordinal+1}. ${step.action}","demo_action_${step.name}") {
+                        if(!detailsAllowed()) { blocked();return@button }
+                        stopPlayback();engine.demoAction(step);updateDriving(false)
+                        if(engine.preferences.voiceEnabled) voice?.speak(engine.demoFeedback)
+                    }
+                }
+            }
+            val conditionRow=row(controls)
+            demoObstructionButton=button(conditionRow,"접근 차량·보행자 가정","demo_obstruction") {
+                if(!detailsAllowed()) { blocked();return@button }
+                stopPlayback();engine.setDemoObstruction(!engine.demoObstruction);updateDriving(false)
+                if(engine.preferences.voiceEnabled) voice?.speak(engine.demoFeedback)
+            }
+            controls.addView(label("빠른 미리보기 · 아래 기능은 행동 입력을 생략하고 장면만 넘겨요.",12f,muted))
             val buttons=row(controls)
-            button(buttons,if(playing) "일시 정지" else "자동 재생","demo_play") {
+            button(buttons,if(playing) "미리보기 정지" else "장면 자동 재생","demo_play") {
                 if(!detailsAllowed()) { blocked();return@button }
                 playing=!playing
                 handler.removeCallbacks(advanceDemo)
                 if(playing) handler.postDelayed(advanceDemo,7_000)
                 buildPage()
             }
-            button(buttons,"다음 장면","demo_next") { if(detailsAllowed()) { engine.nextDemo();updateDriving() } else blocked() }
+            button(buttons,"장면 건너뛰기","demo_next") { if(detailsAllowed()) { engine.nextDemo();updateDriving() } else blocked() }
             button(buttons,"처음부터","demo_restart") { if(detailsAllowed()) { stopPlayback();engine.startDemo();buildPage() } else blocked() }
         }
         liveView=label("",13f,muted);content.addView(liveView)
@@ -219,13 +350,19 @@ class DrivingCoachActivity : Activity() {
         button(bottom,if(demo) "실제 Pleos 연결" else "시뮬레이션 보기","mode") {
             if(packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE) && !detailsAllowed()) { blocked();return@button }
             stopPlayback();engine.cancel("데이터 모드 전환");stopSources();statuses.clear();demo=!demo;page="driving"
+            clearMapRoute();livePosition=null;destination=null;activeRouteId=""
             createEngine();buildPage();startSources()
+            if(demo)loadReferenceRoute()
         }
         button(bottom,"연결 상태","connection") { showConnection() }
     }
 
     private fun updateDriving(autoSpeak: Boolean = true) {
         if(!::engine.isInitialized || page!="driving") return
+        goalView?.text=repository.focusedGoal()?.let {"오늘 목표 · $it"} ?: "퀘스트 · 목표에서 오늘 집중할 목표를 선택해요"
+        questStatusView?.text=runCatching {questBridge?.summary(engine.type)}.getOrNull() ?: statuses["퀘스트"].orEmpty()
+        voiceStatusView?.text="음성 ${if(engine.preferences.voiceEnabled) "ON" else "OFF"} · ${statuses["음성"] ?: "Pleos 서비스 응답 대기"}"
+        feedbackView?.text=if(demo && engine.demoFeedback.isNotBlank()) "체험 피드백 · ${engine.demoFeedback}" else ""
         val cue=engine.cue()
         val stage=when(engine.phase) {
             CoachPhase.LANE_PREPARATION -> "01  차로 준비"
@@ -253,7 +390,34 @@ class DrivingCoachActivity : Activity() {
             engine.distanceMeters?.let { append("\n내비 안내 지점까지 ${it.toInt()}m") }
             if(engine.navigationDescription.isNotBlank()) append("\n${engine.navigationDescription}")
         }
-        scene?.apply { phase=engine.phase;indicator=engine.indicator;invalidate() }
+        demoStepView?.text=if(engine.phase==CoachPhase.FINISHED) "7 / 7 · 행동 체험을 마쳤어요" else
+            "${engine.demoStep.ordinal+1} / 7 · ${if(engine.demoObstruction) "진행 보류 · 다시 확인할 상황을 선택해요" else engine.demoStep.title}\n체험 ${engine.demoLaneCount}개 차로 · 현재 ${engine.demoCurrentLane}차로 → 목표 ${engine.demoTargetLane}차로 · 남은 이동 ${engine.demoLaneChangesRemaining}개"
+        demoButtons.forEach { (step,button) ->
+            val current=engine.active && step==engine.demoStep
+            button.isEnabled=current && !engine.demoObstruction && detailsAllowed()
+            button.alpha=if(current) 1f else 0.45f
+            button.backgroundTintList=android.content.res.ColorStateList.valueOf(if(current) Color.rgb(36,111,97) else Color.rgb(41,66,79))
+        }
+        demoObstructionButton?.apply {
+            visibility=if(engine.active && engine.demoStep in setOf(DemoDriveStep.MIRROR,DemoDriveStep.SURROUNDINGS)) View.VISIBLE else View.GONE
+            text=if(engine.demoObstruction) "다시 확인한 상황 가정 · 보류 해제" else "접근 차량·보행자 있는 상황 가정"
+            isEnabled=detailsAllowed()
+        }
+        scene?.apply { phase=engine.phase;indicator=engine.indicator;demoStep=engine.demoStep;demoObstruction=engine.demoObstruction
+            laneCount=engine.demoLaneCount;currentLane=engine.demoCurrentLane;refreshPose();invalidate() }
+        updateMapCaption()
+        vehicleView?.text=vehicleState.summary()+"\n"+vehicleState.cue(detailsAllowed())
+        if(demo && referenceRoute!=null) {
+            val completed=(engine.demoCurrentLane-engine.demoStartLane).toDouble()
+            val laneChanges=(engine.demoTargetLane-engine.demoStartLane).coerceAtLeast(1)
+            val progress=when(engine.demoStep) {
+                DemoDriveStep.SIGNAL->0.0;DemoDriveStep.MIRROR->0.10+0.4*completed/laneChanges
+                DemoDriveStep.LANE_CHANGE->0.10+0.4*(completed+0.3)/laneChanges
+                DemoDriveStep.STOP->0.61;DemoDriveStep.SURROUNDINGS->0.65;DemoDriveStep.TURN->0.65
+                DemoDriveStep.EXIT->0.87;DemoDriveStep.FINISHED->1.0
+            }
+            if(progress!=lastMapProgress) {mapView?.moveAlongRoute(progress,lastMapProgress>=0);lastMapProgress=progress}
+        }
         liveView?.text=if(demo) "시나리오 값은 실제 주행 기록과 구분해 저장해요." else
             listOfNotNull(statuses["속도"],statuses["내비"],statuses["연결"],statuses["도착"]).joinToString(" · ")
         if(cue!=null) {
@@ -267,6 +431,49 @@ class DrivingCoachActivity : Activity() {
         } else if(!engine.active && lastSpokenKey!=null) {
             voice?.stop();lastSpokenKey=null
         }
+    }
+
+    private fun updateMapCaption() {
+        mapCaption?.text=if(demo) "$mapStatus · 판교 연습용 참고 경로\n위치는 버튼 입력에 따른 시뮬레이션 · 실제 주행 아님 · $referenceStatus"
+            else "$mapStatus · 위치: Pleos 응답\n${if(referenceRoute==null) "목적지 ${destinationName.ifBlank {"응답 대기"}} · 경로 불러오기를 눌러 주세요" else "OSRM 참고 경로 · 차량 내비 경로와 다를 수 있어요"} · $referenceStatus"
+        laneView?.text=if(demo) "체험 ${engine.demoCurrentLane}→${engine.demoTargetLane}차로 · 오른쪽 ${engine.demoLaneChangesRemaining}개 남음"
+            else lanePlan?.instruction(activeRouteId)?.let {"직접 지정 · $it"} ?: "현재 차로 미확인 · 정차 중 차로 계획을 지정해 주세요"
+    }
+    private fun clearMapRoute() {
+        routeClient?.cancel();referenceRoute=null;lanePlan=null;lastMapProgress=-1.0
+        mapView?.setRoute(null);referenceStatus="";updateMapCaption()
+    }
+    private fun loadReferenceRoute() {
+        val start=if(demo)GeoPoint(37.4015,127.1058) else livePosition
+        val end=if(demo)GeoPoint(37.4030,127.1059) else destination
+        if(start==null || end==null) {toast("Pleos 위치와 목적지 응답이 필요해요. 차량 내비에서 목적지를 설정해 주세요.");return}
+        referenceStatus="경로를 불러오는 중";updateMapCaption()
+        if(routeClient==null)routeClient=ReferenceRouteClient(this)
+        val mode=demo;val routeId=activeRouteId
+        routeClient?.request(start,end,{route->
+            if(!active || demo!=mode || (!demo && routeId!=activeRouteId))return@request
+            referenceRoute=route;mapView?.setRoute(route);lastMapProgress=-1.0
+            referenceStatus="${route.distanceMeters.toInt()}m · ${route.roadNames.joinToString(" → ")}"
+            updateDriving(false)
+        },{message->referenceStatus=message;updateMapCaption()})
+    }
+    private fun showLanePlan() {
+        if(!detailsAllowed()) {blocked();return}
+        if(demo) {toast("아래 ‘체험 차로’ 버튼으로 현재·목표 차로를 선택해 주세요");return}
+        if(activeRouteId.isBlank()) {toast("차량 내비에서 경로 안내를 먼저 시작해 주세요");return}
+        val routeId=activeRouteId
+        val fields=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(24),dp(12),dp(24),dp(12))}
+        fields.addView(label("왼쪽부터 1차로예요. 실제 차로를 직접 확인해 입력해 주세요. 경로가 바뀌면 초기화해요.",16f,Color.DKGRAY))
+        fun input(title: String,value: Int)=EditText(this).apply {hint=title;inputType=android.text.InputType.TYPE_CLASS_NUMBER;setText(value.toString());fields.addView(this)}
+        fields.addView(label("전체 차로 수",15f,Color.DKGRAY));val total=input("전체",3)
+        fields.addView(label("현재 차로",15f,Color.DKGRAY));val current=input("현재",1)
+        fields.addView(label("목표 차로",15f,Color.DKGRAY));val target=input("목표",3)
+        dialog=AlertDialog.Builder(this).setTitle("이 경로의 차로 계획").setView(fields).setNegativeButton("취소",null)
+            .setPositiveButton("지정") {_,_->
+                if(!detailsAllowed() || activeRouteId!=routeId)return@setPositiveButton
+                val plan=DriverLanePlan(routeId,current.text.toString().toIntOrNull() ?: 0,target.text.toString().toIntOrNull() ?: 0,total.text.toString().toIntOrNull() ?: 0)
+                if(plan.valid) {lanePlan=plan;updateDriving(false)} else toast("전체 2~8개와 범위 안의 현재·목표 차로를 입력해 주세요")
+            }.create().also {it.show()}
     }
 
     /** Feed finalized speech from scratch/gain's STT here; never forwards partial transcripts. */
@@ -288,7 +495,7 @@ class DrivingCoachActivity : Activity() {
     fun acceptVerifiedManeuver(input: VerifiedManeuver) { handler.post { if(active) { engine.verified(input);updateDriving() } } }
 
     fun refreshPreferencesFromHost() { handler.post { if(active) {
-        repository.questPort=CoachHostBindings.questPort;repository.feedbackPort=CoachHostBindings.feedbackPort
+        repository.questPort=questBridge ?: CoachHostBindings.questPort;repository.feedbackPort=CoachHostBindings.feedbackPort
         engine.preferences=repository.preferences()
         if(!engine.preferences.voiceEnabled) voice?.stop()
         lastSpokenKey=null;buildPage()
@@ -388,6 +595,7 @@ class DrivingCoachActivity : Activity() {
             panel.addView(Spinner(this).apply {
                 adapter=ArrayAdapter(this@DrivingCoachActivity,android.R.layout.simple_spinner_dropdown_item,listOf("자세히","간략히","요청할 때만"))
                 setSelection(value.level(type).ordinal)
+                isEnabled=questBridge==null
                 onItemSelectedListener=object : AdapterView.OnItemSelectedListener {
                     override fun onItemSelected(parent: AdapterView<*>?,view: View?,position: Int,id: Long) {
                         value=value.copy(levels=value.levels+(type to GuidanceLevel.values()[position]))
@@ -400,11 +608,12 @@ class DrivingCoachActivity : Activity() {
             setOnCheckedChangeListener {_,checked->value=value.copy(voiceEnabled=checked)} })
         if(demo) panel.addView(CheckBox(this).apply {text="자동 방향지시등 체험 · 차량 제어 없음";isChecked=value.demoAutomaticIndicator;minHeight=dp(48)
             setOnCheckedChangeListener {_,checked->value=value.copy(demoAutomaticIndicator=checked)} })
-        panel.addView(TextView(this).apply {text="퀘스트 연결 시 안내 수준은 퀘스트 쪽 설정을 받아요. 단계별 완료 동그라미와 성장 계산은 퀘스트 파트가 담당해요.";textSize=13f})
+        panel.addView(TextView(this).apply {text="안내 수준은 퀘스트 설정에서 바꿔요. 이 화면에서는 음성과 자동 방향지시등 체험 옵션을 설정해요.";textSize=13f})
         dialog=AlertDialog.Builder(this).setTitle("나에게 맞는 안내").setView(ScrollView(this).apply {addView(panel)})
+            .setNeutralButton("퀘스트 설정") {_,_->openQuests(1)}
             .setNegativeButton("취소",null).setPositiveButton("적용") {_,_->
                 if(detailsAllowed()) {
-                    if(repository.questPort===UnconnectedQuestPort) { repository.savePreferences(value);engine.preferences=value }
+                    if(repository.questPort===UnconnectedQuestPort || questBridge!=null) { repository.savePreferences(value);engine.preferences=repository.preferences() }
                     else { engine.preferences=repository.preferences();toast("퀘스트 파트의 안내 설정을 적용했어요") }
                     if(!value.voiceEnabled) voice?.stop()
                     updateDriving()
@@ -419,6 +628,64 @@ class DrivingCoachActivity : Activity() {
         dialog=AlertDialog.Builder(this).setTitle("Pleos 연결 상태").setMessage(text)
             .setPositiveButton("닫기",null).setNeutralButton("차량 내비 열기") {_,_-> source?.openNavigation() }
             .create().also {it.show()}
+    }
+
+    private fun openQuests(tab: Int=0) {
+        if(!detailsAllowed()) {blocked();return}
+        startActivity(Intent(this,com.hmgchallenge.pleosstarter.quests.QuestActivity::class.java)
+            .putExtra("quest_demo",demo).putExtra("quest_tab",tab))
+    }
+
+    private fun buildFeedback() {
+        if(demo) getSharedPreferences("driver_simulator",MODE_PRIVATE).getString("last_report",null)?.let {report->
+            val simulatorPanel=card(content)
+            simulatorPanel.addView(label("최근 운전석 체험",18f,mint));simulatorPanel.addView(label(report,15f,muted))
+        }
+        val events=repository.eventsAfter().filter {it.tripId==engine.tripId && (it.source==EvidenceSource.DEMO)==demo}
+        val panel=card(content)
+        panel.addView(label("주행 돌아보기 · ${if(demo) "버튼 체험" else "실제 연결 기록"}",23f,mint))
+        panel.addView(label("이 기기에 저장된 기록 · 휴대전화 동기화 연결 없음",13f,muted))
+        val phases=events.filter {it.eventType==CoachEventType.PHASE_RECORDED}
+        panel.addView(label(if(demo) "체험에서 차로 변경·우회전·교차로 이탈 ${phases.size}/3개 장면을 기록했어요." else
+            "차량 관측과 사용자 메모를 돌아봐요. 관측값만으로 운전 수행을 평가하지 않아요.",18f))
+        val notes=events.filter {it.eventType==CoachEventType.DIFFICULTY_NOTED}
+        panel.addView(label("내가 기억한 순간 · ${notes.size}개",18f,mint))
+        if(notes.isEmpty()) panel.addView(label("‘이 상황 기억’을 누르면 당시 상황과 함께 표시돼요.",15f,muted))
+        notes.forEach {panel.addView(label("${it.feedbackNote()?.category ?: it.situationType.name} · ${it.detail}",16f))}
+        panel.addView(label("상황 타임라인",18f,mint))
+        events.filter {it.eventType in setOf(CoachEventType.STARTED,CoachEventType.PHASE_RECORDED,CoachEventType.UNVERIFIED,
+            CoachEventType.CANCELLED,CoachEventType.DEFERRED,CoachEventType.CHECK_CONFIRMED)}.takeLast(24).forEach {event->
+            val time=java.text.SimpleDateFormat("HH:mm:ss",Locale.KOREA).format(java.util.Date(event.timestamp))
+            val title=when(event.eventType) {
+                CoachEventType.PHASE_RECORDED->if(demo) "장면 체험 완료" else "공급자 수행 확인"
+                CoachEventType.STARTED->"상황 시작"
+                CoachEventType.CANCELLED->"상황 중단"
+                CoachEventType.UNVERIFIED->"수행 미확인"
+                CoachEventType.DEFERRED->"기다리기"
+                else->"확인 입력"
+            }
+            val detail=when(event.eventType) {
+                CoachEventType.CHECK_CONFIRMED->if(event.detail.startsWith("행동 버튼 · ")) event.detail.removePrefix("행동 버튼 · ").substringBefore(" · ") else "주변을 다시 확인한 상황"
+                CoachEventType.PHASE_RECORDED->when(event.situationType) {
+                    SituationType.LANE_CHANGE_RIGHT->"목표 차로까지 이동"
+                    SituationType.RIGHT_TURN->"우회전"
+                    else->"같은 교차로 빠져나오기"
+                }
+                CoachEventType.DEFERRED->"접근 차량·보행자를 가정하고 기다림"
+                CoachEventType.STARTED->"이번 교차로의 차로 준비"
+                else->event.detail
+            }
+            panel.addView(label("$time · $title · $detail",14f,muted))
+        }
+        if(events.isEmpty()) panel.addView(label("이번 주행에 기록된 상황이 아직 없어요.",16f))
+        val actions=row(content)
+        button(actions,"이 기록 돌아봤어요","review_confirm") {
+            if(!detailsAllowed()) {blocked();return@button}
+            runCatching {questBridge?.review(events)}.onSuccess {toast("같은 주행의 돌아보기를 퀘스트에 연결했어요")}
+                .onFailure {toast("기록을 연결하지 못했어요. 기존 기록은 보존했어요")}
+        }
+        button(actions,"퀘스트에서 확인","review_quests") {openQuests(2)}
+        button(actions,"주행 화면으로","review_back") {page="driving";buildPage()}
     }
 
     private fun detailsAllowed()=gate.allows(demo && !packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE))
@@ -461,7 +728,12 @@ class DrivingCoachActivity : Activity() {
         voice?.stop()
         if(!demo) engine.cancel("화면 종료 · 안내 세션 중단")
         stopSources();super.onStop()
+        routeClient?.cancel()
     }
     override fun onSaveInstanceState(outState: Bundle) {outState.putBoolean("demo",demo);super.onSaveInstanceState(outState)}
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig);buildPage()
+    }
+    override fun onDestroy() {routeClient?.close();questBridge?.close();questBridge=null;super.onDestroy()}
     companion object {private const val SPEED_PERMISSION="android.car.permission.CAR_SPEED"}
 }

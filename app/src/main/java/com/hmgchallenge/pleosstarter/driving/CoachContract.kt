@@ -29,7 +29,8 @@ data class CoachPreferences(
     val levels: Map<SituationType, GuidanceLevel> = emptyMap(),
     val voiceEnabled: Boolean = false,
     /** Simulation effect only; no public Pleos turn-signal setter exists. */
-    val demoAutomaticIndicator: Boolean = false
+    val demoAutomaticIndicator: Boolean = false,
+    val disabled: Set<SituationType> = emptySet()
 ) {
     fun level(type: SituationType) = levels[type] ?: GuidanceLevel.DETAILED
 }

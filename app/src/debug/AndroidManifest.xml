@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Emulator driver-input tool only; runtime rejects physical Automotive devices. -->
+        <activity android:name=".driving.DrivingSimulatorActivity">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+        </activity>
+    </application>
+</manifest>

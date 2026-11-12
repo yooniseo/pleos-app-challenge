@@ -6,6 +6,7 @@ import android.os.Looper
 import ai.pleos.playground.navi.constants.NaviErrorCode
 import ai.pleos.playground.navi.constants.TurnType
 import ai.pleos.playground.navi.data.CurrentLocationInfo
+import ai.pleos.playground.navi.data.DestinationInfo
 import ai.pleos.playground.navi.data.DestinationArrivedInfo
 import ai.pleos.playground.navi.data.RouteStartInfo
 import ai.pleos.playground.navi.data.TBTInfo
@@ -26,12 +27,16 @@ class PleosCoachSource(private val context: Context, callback: Listener,
         fun onRouteInvalidated(reason: String)
         fun onArrival()
         fun onStatus(channel: String, message: String)
+        fun onPosition(point: GeoPoint, heading: Double, routeId: String) {}
+        fun onDestination(point: GeoPoint, name: String) {}
     }
     private val listener = object : Listener {
         override fun onNavigation(right: Boolean, meters: Double?, description: String) = callback.onNavigation(right,meters,description)
         override fun onIndicator(value: Indicator) = callback.onIndicator(value)
         override fun onRouteInvalidated(reason: String) = callback.onRouteInvalidated(reason)
         override fun onArrival() = callback.onArrival()
+        override fun onPosition(point: GeoPoint, heading: Double, routeId: String) = callback.onPosition(point,heading,routeId)
+        override fun onDestination(point: GeoPoint, name: String) = callback.onDestination(point,name)
         override fun onStatus(channel: String, message: String) {
             observe(ApiObservation(channel,"STATUS",mapOf("message" to message)))
             callback.onStatus(channel,message)
@@ -107,21 +112,27 @@ class PleosCoachSource(private val context: Context, callback: Listener,
                     val nextId = currentLocationInfo.routeId.takeIf { it.isNotBlank() }
                     if (routeId != null && nextId != routeId) listener.onRouteInvalidated("경로 ID 변경")
                     routeId = nextId
+                    val point=GeoPoint(currentLocationInfo.latitude,currentLocationInfo.longitude)
+                    if(point.valid) listener.onPosition(point,currentLocationInfo.heading,nextId.orEmpty())
+                }
+                override fun onDestinationInfo(destinationInfo: DestinationInfo) = post(token) {
+                    val point=GeoPoint(destinationInfo.latitude,destinationInfo.longitude)
+                    if(point.valid) listener.onDestination(point,destinationInfo.name)
                 }
                 override fun onRouteStarted(routeStartInfo: RouteStartInfo) = post(token) {
                     routing = true; listener.onRouteInvalidated("경로 탐색 중")
                 }
                 override fun onRoutingCompleted() = post(token) {
-                    routing = false; listener.onRouteInvalidated("새 경로 탐색 완료"); helper.getTBTInfo()
+                    routing = false; listener.onRouteInvalidated("새 경로 탐색 완료"); helper.getTBTInfo(); helper.getDestinationInfo()
                 }
                 override fun onReRouteEnded() = post(token) {
-                    routing = false; listener.onRouteInvalidated("재탐색 완료"); helper.getTBTInfo()
+                    routing = false; listener.onRouteInvalidated("재탐색 완료"); helper.getTBTInfo(); helper.getDestinationInfo()
                 }
                 override fun onRouteCancelled() = post(token) {
                     routing = true; routeId = null; listener.onRouteInvalidated("경로 안내 취소")
                 }
                 override fun onDestinationChanged() = post(token) {
-                    listener.onRouteInvalidated("목적지 변경")
+                    listener.onRouteInvalidated("목적지 변경"); helper.getDestinationInfo()
                 }
                 override fun onDestinationArrived(destinationArrivedInfo: DestinationArrivedInfo) = post(token) {
                     routing = true; listener.onRouteInvalidated("목적지 도착 · 수행 자동 판정 없음"); listener.onArrival()
@@ -137,7 +148,7 @@ class PleosCoachSource(private val context: Context, callback: Listener,
                     helper.addListener(events); navigationReady = true
                     observe(ApiObservation("NAVI","CONNECTED"))
                     listener.onStatus("내비", "연결됨 · 실제 TBT 응답 대기")
-                    helper.getCurrentLocationInfo(); helper.getTBTInfo()
+                    helper.getCurrentLocationInfo(); helper.getTBTInfo(); helper.getDestinationInfo()
                 } catch (error: Exception) { listener.onStatus("내비", "등록 실패 · ${error.javaClass.simpleName}") }
             } }, onFailed = { error -> post(token) {
                 navigationReady = false; listener.onRouteInvalidated("내비 연결 실패")

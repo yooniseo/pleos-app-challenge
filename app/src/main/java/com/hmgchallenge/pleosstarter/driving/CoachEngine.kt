@@ -15,6 +15,14 @@ class CoachEngine(
     var indicator = Indicator.UNKNOWN; private set
     var distanceMeters: Double? = null; private set
     var navigationDescription = ""; private set
+    var demoStep = DemoDriveStep.SIGNAL; private set
+    var demoObstruction = false; private set
+    var demoLaneCount = 3; private set
+    var demoStartLane = 1; private set
+    var demoCurrentLane = 1; private set
+    val demoTargetLane get() = demoLaneCount
+    val demoLaneChangesRemaining get() = demoTargetLane-demoCurrentLane
+    var demoFeedback = ""; private set
     private var requested = false
     private val shownCues = mutableSetOf<String>()
     private val assisted = mutableSetOf<SituationType>()
@@ -35,6 +43,9 @@ class CoachEngine(
         begin(EvidenceSource.DEMO)
         distanceMeters = 240.0
         indicator = if (preferences.demoAutomaticIndicator) Indicator.RIGHT else Indicator.OFF
+        demoStep = if (indicator == Indicator.RIGHT) DemoDriveStep.MIRROR else DemoDriveStep.SIGNAL
+        demoObstruction = false
+        demoCurrentLane=demoStartLane;demoFeedback=""
         if (indicator == Indicator.RIGHT) record(CoachEventType.SIGNAL_OBSERVED, EvidenceSource.DEMO, "자동 점등 체험 · 실제 차량 제어 없음")
     }
 
@@ -92,6 +103,53 @@ class CoachEngine(
         advance(EvidenceSource.DEMO, "시나리오 재생 · 실제 수행 판정 아님")
     }
 
+    fun demoAction(step: DemoDriveStep): Boolean {
+        if (!demo || !active || step != demoStep || demoObstruction) return false
+        record(CoachEventType.CHECK_CONFIRMED, EvidenceSource.DEMO, "행동 버튼 · ${step.title} · 사용자 가정 입력, 실제 수행 검증 아님")
+        when (step) {
+            DemoDriveStep.SIGNAL -> {
+                indicator = Indicator.RIGHT
+                record(CoachEventType.SIGNAL_OBSERVED, EvidenceSource.DEMO, "RIGHT · 버튼 체험, 실제 차량 제어 없음")
+                demoStep = DemoDriveStep.MIRROR
+                demoFeedback="방향지시등 체험을 기록했어요. 미러와 사각지대를 확인해요."
+            }
+            DemoDriveStep.MIRROR -> {demoStep = DemoDriveStep.LANE_CHANGE;demoFeedback="주변 확인 입력을 기록했어요. 한 차로씩 체험해요."}
+            DemoDriveStep.LANE_CHANGE -> {
+                demoCurrentLane++
+                if(demoCurrentLane<demoTargetLane) {
+                    demoStep=DemoDriveStep.MIRROR
+                    demoFeedback="좋아요. 체험에서 한 차로 이동했어요. 남은 ${demoLaneChangesRemaining}개 차로도 다시 확인해요."
+                } else {
+                    advance(EvidenceSource.DEMO, "차로 변경 버튼 체험 · 실제 수행 검증 아님")
+                    demoFeedback="좋아요. 체험에서 목표 차로에 도착했어요."
+                }
+            }
+            DemoDriveStep.STOP -> {demoStep = DemoDriveStep.SURROUNDINGS;demoFeedback="멈춤 입력을 기록했어요. 신호와 보행자를 살펴봐요."}
+            DemoDriveStep.SURROUNDINGS -> {demoStep = DemoDriveStep.TURN;demoFeedback="주변 확인 입력을 기록했어요."}
+            DemoDriveStep.TURN -> {advance(EvidenceSource.DEMO, "우회전 버튼 체험 · 실제 수행 검증 아님");demoFeedback="좋아요. 체험에서 우회전을 마쳤어요."}
+            DemoDriveStep.EXIT -> {advance(EvidenceSource.DEMO, "같은 교차로 이탈 버튼 체험 · 실제 수행 검증 아님");demoFeedback="이번 교차로 체험을 마쳤어요. 수고했어요."}
+            DemoDriveStep.FINISHED -> return false
+        }
+        requested = false
+        return true
+    }
+
+    fun configureDemoLanes(count: Int, start: Int): Boolean {
+        if(!demo || demoStep!=DemoDriveStep.SIGNAL || count !in 2..4 || start !in 1 until count) return false
+        demoLaneCount=count;demoStartLane=start;demoCurrentLane=start
+        return true
+    }
+
+    fun setDemoObstruction(present: Boolean): Boolean {
+        if (!demo || !active || demoStep !in setOf(DemoDriveStep.MIRROR, DemoDriveStep.SURROUNDINGS)) return false
+        if (demoObstruction == present) return true
+        demoObstruction = present
+        demoFeedback=if(present) "잘 멈췄어요. 체험에서는 다시 확인할 때까지 기다려요." else "다시 확인한 상황을 입력했어요."
+        record(if (present) CoachEventType.DEFERRED else CoachEventType.CHECK_CONFIRMED,
+            EvidenceSource.DEMO, if (present) "접근 차량/보행자 가정 · 진행 보류" else "다시 확인한 상황 가정 · 자동 안전 판정 아님")
+        return true
+    }
+
     fun verified(input: VerifiedManeuver): Boolean {
         if (demo || !active || input.situationInstanceId != instanceId || input.completedPhase != phase ||
             input.evidenceId.isBlank() || !externalEvidence.add(input.evidenceId)) return false
@@ -108,6 +166,16 @@ class CoachEngine(
             else -> phase
         }
         distanceMeters = when (phase) { CoachPhase.RIGHT_TURN -> 35.0; else -> null }
+        if (demo) {
+            demoStep = when (phase) {
+                CoachPhase.RIGHT_TURN -> DemoDriveStep.STOP
+                CoachPhase.INTERSECTION_EXIT -> DemoDriveStep.EXIT
+                CoachPhase.FINISHED -> DemoDriveStep.FINISHED
+                else -> demoStep
+            }
+            demoObstruction = false
+            if(phase==CoachPhase.RIGHT_TURN) demoCurrentLane=demoTargetLane
+        }
         requested = false
     }
 
@@ -118,8 +186,17 @@ class CoachEngine(
 
     fun requestExplanation() { requested = true }
     fun cue(): GuidanceCue? {
-        if (!active || (preferences.level(type) == GuidanceLevel.ON_REQUEST && !requested)) return null
+        if (!active || type in preferences.disabled || (preferences.level(type) == GuidanceLevel.ON_REQUEST && !requested)) return null
         val brief = preferences.level(type) != GuidanceLevel.DETAILED
+        if (demo) return GuidanceCue("demo.${demoStep.name}.${demoObstruction}",
+            if (demoObstruction) "잠깐 기다리고 다시 확인해요" else demoStep.title,
+            if (demoObstruction) "접근 차량 또는 보행자가 있는 장면을 가정했어요. 진행을 보류하고 다시 확인해요."
+            else if(demoStep==DemoDriveStep.LANE_CHANGE || demoStep==DemoDriveStep.SIGNAL) "체험 도로 ${demoLaneCount}개 차로 중 ${demoCurrentLane}차로예요. 우회전 준비를 위해 오른쪽으로 ${demoLaneChangesRemaining}개 차로를 한 칸씩 준비해요.\n${demoStep.instruction}"
+            else demoStep.instruction,
+            when (demoStep) {
+                DemoDriveStep.SIGNAL, DemoDriveStep.MIRROR, DemoDriveStep.LANE_CHANGE -> "미러와 사각지대 · 사용자 확인 체험"
+                else -> "신호·전방·횡단보도 · 사용자 확인 체험"
+            })
         val cue = when (phase) {
             CoachPhase.LANE_PREPARATION -> GuidanceCue("lane.prepare", "우회전 전에, 차로부터",
                 if (brief) "오른쪽 차로를 미리 준비해 주세요."
