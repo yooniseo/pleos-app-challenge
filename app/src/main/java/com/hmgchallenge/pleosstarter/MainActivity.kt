@@ -64,7 +64,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(13, 22, 31)); addView(content)
         }
         content.addView(label("PLEOS  /  FIRST DRIVE", 13f, accent))
-        content.addView(label("나의 드라이브", 30f).apply { setTypeface(null, Typeface.BOLD) })
+        content.addView(label("차근차근", 30f).apply { setTypeface(null, Typeface.BOLD) })
         content.addView(Switch(this).apply {
             text = "샘플 데이터로 보기"; setTextColor(Color.WHITE); minHeight = dp(48)
             isChecked = demo

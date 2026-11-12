@@ -123,8 +123,10 @@ class DrivingCoachActivity : Activity() {
         super.onResume()
         // Start only after this Activity is resumed. The former queued onStart action
         // consumed the request even when Pleos paused the launcher before it executed.
-        if(intent.getBooleanExtra("open_cockpit",false) && EmulatorCockpitBridge.isAllowed(this)) {
+        val fromLauncher=intent.action==Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)
+        if((intent.getBooleanExtra("open_cockpit",false) || fromLauncher) && EmulatorCockpitBridge.isAllowed(this)) {
             intent.removeExtra("open_cockpit")
+            intent.removeCategory(Intent.CATEGORY_LAUNCHER)
             openSimulator()
         }
     }
@@ -227,7 +229,7 @@ class DrivingCoachActivity : Activity() {
         content = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(24),dp(14),dp(24),dp(24)) }
         val scroll = ScrollView(this).apply { setBackgroundColor(bg); isFillViewport=true; addView(content) }
         val header = row(content)
-        header.addView(label("TUTORIAL  /  뿌까",15f,mint), LinearLayout.LayoutParams(0,-2,1f))
+        header.addView(label("차근차근  /  주행 코치",15f,mint), LinearLayout.LayoutParams(0,-2,1f))
         header.addView(label(if(demo) "● 시뮬레이션" else "● 차량 모드",14f,if(demo) mint else muted))
         content.addView(label("한 걸음씩, 함께 운전해요",27f).apply { setTypeface(null,Typeface.BOLD) })
         val tabs = row(content)

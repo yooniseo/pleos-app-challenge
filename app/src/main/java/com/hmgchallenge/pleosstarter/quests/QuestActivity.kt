@@ -82,7 +82,7 @@ class QuestActivity : Activity() {
             root.addView(label(getString(R.string.quest_parked_only_hint), 18f, muted))
             setContentView(root); return
         }
-        root.addView(label("TUTORIAL  /  퀘스트 · 성장 · 안내 설정", 21f, accent))
+        root.addView(label("차근차근  /  퀘스트 · 성장 · 안내 설정", 21f, accent))
         val modes = row()
         listOf(true to "시연 모드", false to "내 연습 기록").forEach { (value, title) ->
             modes.addView(button(title, demo == value) {

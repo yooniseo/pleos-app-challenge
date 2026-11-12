@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="quest_app_name">튜토리얼 · 퀘스트</string>
+    <string name="quest_app_name">차근차근 · 퀘스트</string>
     <string name="quest_storage_failed">저장된 기록을 읽지 못했어요. 기존 기록을 덮어쓰지 않고 보존했어요.</string>
     <string name="quest_save_failed">기록을 저장하지 못했어요. 저장 공간을 확인해 주세요.</string>
     <string name="quest_parked_only">주차 후 함께 연습해요</string>

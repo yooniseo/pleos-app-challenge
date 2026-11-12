@@ -16,7 +16,8 @@ import java.net.URL
 open class CockpitSmokeRunner : Instrumentation() {
     private var automaticProbe=false
     private var navigationProbe=false
-    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);automaticProbe=arguments?.getString("auto_probe")=="1";navigationProbe=arguments?.getString("navigation_probe")=="1"}
+    private var interactionProbe=false
+    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);automaticProbe=arguments?.getString("auto_probe")=="1";navigationProbe=arguments?.getString("navigation_probe")=="1";interactionProbe=arguments?.getString("interaction_probe")=="1"}
     override fun runOnMainSync(runner: Runnable) {
         // Keep test assertion failures on the instrumentation thread so finally restores user data.
         var failure: Throwable?=null
@@ -28,14 +29,18 @@ open class CockpitSmokeRunner : Instrumentation() {
         val demo=QuestStore(targetContext,true);val before=demo.load();val personal=QuestStore(targetContext,false).load()
         val simulatorPrefs=targetContext.getSharedPreferences("driver_simulator",0)
         val priorReport=simulatorPrefs.getString("last_report",null)
+        val profilePrefs=targetContext.getSharedPreferences("scenario_coach",0)
+        val priorStyle=profilePrefs.getString("style",null)
+        val hadCelebration=profilePrefs.contains("celebration");val priorCelebration=profilePrefs.getBoolean("celebration",true)
         val journal=File(targetContext.filesDir,"driving-coach-events.jsonl")
         val priorJournal=journal.takeIf {it.exists()}?.readBytes()
         try {
             check(EmulatorCockpitBridge.isAllowed(targetContext)) {"Debug emulator required"}
+            if(navigationProbe || interactionProbe)profilePrefs.edit().putString("style","STEP_BY_STEP").putBoolean("celebration",true).commit()
             runCatching {uiAutomation.grantRuntimePermission(targetContext.packageName,"android.car.permission.CAR_SPEED")}
             val monitor=addMonitor(DrivingSimulatorActivity::class.java.name,null,false)
-            launcher=startActivitySync(Intent(targetContext,DrivingCoachActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK).putExtra("open_cockpit",true))
+            val entry=if(interactionProbe)checkNotNull(targetContext.packageManager.getLaunchIntentForPackage(targetContext.packageName)) else Intent(targetContext,DrivingCoachActivity::class.java).putExtra("open_cockpit",true)
+            launcher=startActivitySync(entry.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
             a=checkNotNull(waitForMonitorWithTimeout(monitor,10_000)) as DrivingSimulatorActivity
             removeMonitor(monitor)
             waitForIdleSync();Thread.sleep(1_000)
@@ -45,9 +50,9 @@ open class CockpitSmokeRunner : Instrumentation() {
                 taskRoot=tasks.first {it.taskInfo.taskId==a.taskId}.taskInfo.baseActivity?.className.orEmpty()
             }
             check(taskRoot==DrivingSimulatorActivity::class.java.name) {"Cockpit inherited a parked-only task root: $taskRoot"}
-            if(!navigationProbe)click(a,"nav_controls")
+            if(!navigationProbe && !interactionProbe)click(a,"nav_controls")
             runOnMainSync {
-                if(navigationProbe)return@runOnMainSync
+                if(navigationProbe || interactionProbe)return@runOnMainSync
                 val coach=a.window.decorView.findViewWithTag<android.view.View>("training_coach_panel")
                 val controls=a.window.decorView.findViewWithTag<android.view.View>("training_controls_panel")
                 val left=android.graphics.Rect();val right=android.graphics.Rect()
@@ -55,16 +60,16 @@ open class CockpitSmokeRunner : Instrumentation() {
                 if(a.resources.configuration.screenWidthDp>=760)check(left.right<=right.left) {"Coach and controls overlap"}
             }
             capture("cockpit-ready.png")
-            if(automaticProbe || navigationProbe) {
-                val proof=if(navigationProbe)runNavigationPlayback(a) else runAutomaticPlayback(a)
+            if(automaticProbe || navigationProbe || interactionProbe) {
+                val proof=if(interactionProbe)runCoachInteraction(a)else if(navigationProbe)runNavigationPlayback(a) else runAutomaticPlayback(a)
                 runOnMainSync {a.finish()};Thread.sleep(2_500)
                 val after=consoleState()
                 check(after.getJSONObject("controls").getInt("speed_kph")==0)
                 check(after.getJSONObject("gear").getJSONObject("actual").getString("value")=="Park")
                 check(QuestStore(targetContext,false).load()==personal)
-                val status=if(navigationProbe)"PASS_FIGMA_NAVIGATION" else "PASS_AUTO_PLAYBACK"
+                val status=if(interactionProbe)"PASS_COACH_INTERACTION" else if(navigationProbe)"PASS_FIGMA_NAVIGATION" else "PASS_AUTO_PLAYBACK"
                 proof.put("after",after);proof.put("result",status)
-                File(targetContext.filesDir,if(navigationProbe)"figma-navigation-proof.json" else "auto-playback-proof.json").writeText(proof.toString(2))
+                File(targetContext.filesDir,if(interactionProbe)"coach-interaction-proof.json" else if(navigationProbe)"figma-navigation-proof.json" else "auto-playback-proof.json").writeText(proof.toString(2))
                 result.putString("result",status)
             } else {
             click(a,"sim_brake");Thread.sleep(250)
@@ -152,55 +157,153 @@ open class CockpitSmokeRunner : Instrumentation() {
             Thread.sleep(3_000);demo.save(before)
             if(priorJournal==null)journal.delete() else journal.writeBytes(priorJournal)
             simulatorPrefs.edit().apply {if(priorReport==null)remove("last_report")else putString("last_report",priorReport)}.commit()
+            profilePrefs.edit().apply {if(priorStyle==null)remove("style")else putString("style",priorStyle)
+                if(hadCelebration)putBoolean("celebration",priorCelebration)else remove("celebration")}.commit()
         }
         finish(code,result)
     }
-    private fun runNavigationPlayback(a: DrivingSimulatorActivity): JSONObject {
-        val deadline=android.os.SystemClock.elapsedRealtime()+180_000
-        var ready=false
-        while(!ready && android.os.SystemClock.elapsedRealtime()<deadline) {
-            runOnMainSync {ready=(a.navigationForDiagnostics()["visibleTiles"]?.toIntOrNull() ?: 0)>8}
-            if(!ready)Thread.sleep(300)
-        }
-        check(ready) {"Navigation tiles did not load"};capture("figma-navigation-ready.png")
+    private fun runCoachInteraction(a: DrivingSimulatorActivity): JSONObject {
+        val entries=targetContext.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(targetContext.packageName),0)
+        check(entries.size==1 && entries.single().loadLabel(targetContext.packageManager)=="차근차근")
+        val before=QuestStore(targetContext,true).load().evidence.size
+        capture("chageun-ready.png");click(a,"nav_steering_practice")
+        fun drag(clockwise: Boolean) {runOnMainSync {
+            val wheel=a.window.decorView.findViewWithTag<SimulatorWheelView>("coach_steering_guide")
+            val cx=wheel.width/2f;val cy=wheel.height/2f;val radius=wheel.width*.3f;val now=android.os.SystemClock.uptimeMillis()
+            fun event(action: Int,x: Float,y: Float) {val e=android.view.MotionEvent.obtain(now,now+16,action,x,y,0);wheel.dispatchTouchEvent(e);e.recycle()}
+            event(android.view.MotionEvent.ACTION_DOWN,cx+radius,cy)
+            event(android.view.MotionEvent.ACTION_MOVE,cx,cy+if(clockwise)radius else -radius)
+            event(android.view.MotionEvent.ACTION_UP,cx,cy+if(clockwise)radius else -radius)
+        }}
+        drag(false);Thread.sleep(450)
+        runOnMainSync {check(!a.steeringFollowForDiagnostics()!!.rewarded && a.celebrationSoundStarts()==0)}
+        drag(true);drag(true);Thread.sleep(600)
+        runOnMainSync {check(a.steeringFollowForDiagnostics()!!.rewarded && a.celebrationSoundStarts()==1);check(a.simpleForDiagnostics()!!.distance==0.0)}
+        Thread.sleep(500);runOnMainSync {check(a.celebrationSoundStarts()==1)}
+        check(QuestStore(targetContext,true).load().evidence.size==before)
+        capture("chageun-steering-ding.png");click(a,"nav_steering_practice")
+        click(a,"nav_profile")
+        check(uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("핸들 중심 · 방향·회전량·복원 시점").first().performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+        click(a,"nav_scenario")
+        check(uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText(RoadLesson.PARKING.title).first().performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
         click(a,"nav_auto")
-        val states=mutableListOf<JSONObject>();val seen=mutableSetOf<SimStage>();val lanes=mutableSetOf<Int>()
-        var complete=false;var firstMarker="";var endMarker="";var pausedMarker="";var maxSpeed=0f;var maxVehicleSpeed=0f
+        runOnMainSync {repeat(60){a.simpleForDiagnostics()!!.advance(1000,null,false)}}
+        Thread.sleep(2000)
+        runOnMainSync {check(a.simpleForDiagnostics()!!.complete);check(a.navigationForDiagnostics()["coachStyle"]=="VISUAL")}
+        val state=QuestStore(targetContext,true).load();check(state.evidence.size==before+1)
+        check(state.session!!.situations.single().context.kind==com.hmgchallenge.pleosstarter.quests.SituationKind.PARKING)
+        capture("chageun-parking-complete.png")
+        return JSONObject().apply {put("launcherEntries",1);put("launcherLabel","차근차근");put("directCoachEntry",true)
+            put("wrongSteeringRejected",true);put("correctSteeringDingOnce",true);put("noQuestCreditForWheelAlone",true)
+            put("parkingComplete",true);put("parkingTestUsesVirtualTime",true);put("parkingEvidenceAdded",1)}
+    }
+    private fun runNavigationPlayback(a: DrivingSimulatorActivity): JSONObject {
+        capture("simple-navigation-ready.png")
+        val before=QuestStore(targetContext,true).load().evidence.size
+        click(a,"nav_auto")
+        val deadline=android.os.SystemClock.elapsedRealtime()+85_000
+        var done=false;var laneSeen=false;var turnSeen=false;var maxSdk=0f;var maxSteering=0.0
+        val states=mutableListOf<JSONObject>()
         do {
-            var stage=SimStage.PREPARE;var data=emptyMap<String,String>()
+            var d=0.0;var laneDone=false;var turning=false;var data=emptyMap<String,String>()
             runOnMainSync {
-                val m=a.simulatorForDiagnostics();stage=m.stage;data=a.navigationForDiagnostics()
-                lanes.add(m.currentLane);maxSpeed=maxOf(maxSpeed,m.speed.toFloat())
-                maxVehicleSpeed=maxOf(maxVehicleSpeed,a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f)
-                check(a.window.decorView.findViewWithTag<android.view.View>("navigation_panel").isShown)
+                val s=checkNotNull(a.simpleForDiagnostics());d=s.distance;done=s.complete;laneDone=s.laneDone;turning=s.turning
+                data=a.navigationForDiagnostics()
+                maxSteering=maxOf(maxSteering,kotlin.math.abs(s.steeringTarget))
+                check(a.window.decorView.findViewWithTag<android.view.View>("coach_steering_guide").isShown)
                 check(!a.pausedForDiagnostics())
+                maxSdk=maxOf(maxSdk,a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f)
+                check(data["questSaved"]=="true")
             }
-            if(firstMarker.isBlank())firstMarker=data.getValue("marker")
-            endMarker=data.getValue("marker")
-            if(seen.add(stage)) {
-                states.add(JSONObject(data))
-                if(stage in setOf(SimStage.LANE_OUT,SimStage.TURN_CHECK,SimStage.TURN,SimStage.COMPLETE))capture("figma-navigation-${stage.name.lowercase()}.png")
-                if(stage==SimStage.LANE_RETURN) {
-                    click(a,"nav_pause")
-                    runOnMainSync {check(a.pausedForDiagnostics());pausedMarker=a.navigationForDiagnostics().getValue("marker")}
-                    Thread.sleep(400)
-                    runOnMainSync {check(a.navigationForDiagnostics().getValue("marker")==pausedMarker)}
-                    click(a,"nav_pause")
-                }
+            if(d>16 && !laneSeen) {
+                capture("simple-navigation-lane.png");click(a,"nav_pause")
+                var marker="";runOnMainSync {marker=a.navigationForDiagnostics().getValue("marker")}
+                Thread.sleep(600)
+                runOnMainSync {check(marker==a.navigationForDiagnostics()["marker"])}
+                click(a,"nav_pause");laneSeen=true
             }
-            complete=stage==SimStage.COMPLETE
-            if(!complete)Thread.sleep(250)
-        }while(!complete && android.os.SystemClock.elapsedRealtime()<deadline)
-        check(complete && lanes==setOf(1,2,3));check(firstMarker!=endMarker);check(maxSpeed>0)
-        check(maxVehicleSpeed<0.1f) {"Map playback must leave the emulator parked"}
-        click(a,"nav_controls")
-        runOnMainSync {check(a.window.decorView.findViewWithTag<android.view.View>("training_controls_panel").isShown)}
-        click(a,"sim_navigation")
-        runOnMainSync {check(a.window.decorView.findViewWithTag<android.view.View>("navigation_panel").isShown)}
+            if(turning && !turnSeen) {capture("simple-navigation-turn.png");states.add(JSONObject(data));turnSeen=true}
+            if(laneDone && states.isEmpty())states.add(JSONObject(data))
+            if(!done)Thread.sleep(200)
+        }while(!done && android.os.SystemClock.elapsedRealtime()<deadline)
+        check(done && laneSeen && turnSeen);check(maxSdk<.1f)
+        check(maxSteering>10) {"Steering guide did not change"}
+        val after=QuestStore(targetContext,true).load()
+        check(after.evidence.size==before+2)
+        check(after.session?.finishedAt!=null)
+        check(after.session!!.situations.count {it.outcome==com.hmgchallenge.pleosstarter.quests.SituationEventType.PRACTICED}==3)
+        capture("simple-navigation-complete.png")
+        Thread.sleep(1800)
+        var ambient=emptyList<ApiObservation>();var sounds=0
+        runOnMainSync {ambient=a.celebrationForDiagnostics();sounds=a.celebrationSoundStarts()}
+        check(sounds==2) {"Expected two celebration melodies: $sounds"}
+        check(ambient.any {it.kind=="PULSE_VALUE" && it.values["argb"]?.toIntOrNull()?.and(0x00FFFFFF)==0x65E9C5}) {"Ambient response not confirmed: $ambient"}
+        check(ambient.count {it.kind=="PULSE_SET"}==ambient.count {it.kind=="RESTORED"}) {"Ambient colour not restored"}
+        var completeData=emptyMap<String,String>();runOnMainSync {completeData=a.navigationForDiagnostics()}
+        // Switch through the same visible source picker as the user. The bridge must release ownership.
+        click(a,"nav_speed_mode")
+        val choice=uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("차량 SDK · 받은 속도만큼 이동").first()
+        check(choice.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK));Thread.sleep(3_000)
+        var sdkDistance=0.0;var sdkElapsed=0L;var actual=0f
+        fun console(method: String,path: String) {
+            val c=URL("http://127.0.0.1:8088$path").openConnection() as HttpURLConnection
+            try {c.requestMethod=method;c.connectTimeout=2000;c.readTimeout=2000;check(c.responseCode in 200..299) {"Console $method $path: ${c.responseCode}"};c.inputStream.close()}finally{c.disconnect()}
+        }
+        try {
+            console("POST","/browser/session?client=scenario-speed-probe")
+            console("PUT","/vehicle/gear?gear=Drive")
+            console("PUT","/vehicle/controls?speed=20&accelerator=0&brake=0&steering=0")
+            val speedDeadline=android.os.SystemClock.elapsedRealtime()+10_000
+            do {
+                runOnMainSync {actual=a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f}
+                if(actual<5)Thread.sleep(150)
+            }while(actual<5 && android.os.SystemClock.elapsedRealtime()<speedDeadline)
+            check(kotlin.math.abs(actual-20f/3.6f)<.1f) {"Actual SDK speed not received: $actual"}
+            click(a,"nav_auto");val start=android.os.SystemClock.elapsedRealtime()
+            repeat(8){console("POST","/browser/session?client=scenario-speed-probe");Thread.sleep(500)}
+            click(a,"nav_pause");sdkElapsed=android.os.SystemClock.elapsedRealtime()-start
+            runOnMainSync {sdkDistance=checkNotNull(a.simpleForDiagnostics()).distance}
+            check(kotlin.math.abs(sdkDistance-actual*sdkElapsed/1000)<1.5) {"Speed/distance mismatch: $sdkDistance m / $sdkElapsed ms / $actual mps"}
+            check(consoleState().getJSONObject("controls").getInt("speed_kph")==20) {"App overwrote external console speed"}
+            capture("simple-navigation-sdk-speed.png")
+        }finally {
+            console("POST","/browser/session?client=scenario-speed-probe")
+            console("PUT","/vehicle/controls?speed=0&accelerator=0&brake=0&steering=0")
+            console("PUT","/vehicle/gear?gear=Park")
+            console("POST","/browser/session?client=scenario-speed-probe&closing=1")
+        }
+        // The parking course is explicitly virtual and always uses replay, with its own quest.
+        click(a,"nav_profile")
+        val profile=uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("핸들 중심 · 방향·회전량·복원 시점").first()
+        check(profile.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+        click(a,"nav_scenario")
+        val parkingChoice=uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText(RoadLesson.PARKING.title).first()
+        check(parkingChoice.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK));Thread.sleep(1000)
+        capture("parking-ready.png");click(a,"nav_auto")
+        val parkingDeadline=android.os.SystemClock.elapsedRealtime()+60_000
+        var parked=false;var reverseCaptured=false
+        do {
+            var reversing=false
+            runOnMainSync {
+                val s=checkNotNull(a.simpleForDiagnostics());parked=s.complete;reversing=s.parkingGear=="R" && s.speedMps>0
+                check(s.source==ScenarioSpeed.REPLAY && s.lesson==RoadLesson.PARKING)
+                check(a.navigationForDiagnostics()["coachStyle"]=="VISUAL")
+            }
+            if(reversing && !reverseCaptured){capture("parking-reverse.png");reverseCaptured=true}
+            if(!parked)Thread.sleep(250)
+        }while(!parked && android.os.SystemClock.elapsedRealtime()<parkingDeadline)
+        check(parked && reverseCaptured)
+        val finalState=QuestStore(targetContext,true).load()
+        check(finalState.evidence.size==before+3)
+        check(finalState.session!!.situations.single().context.kind==com.hmgchallenge.pleosstarter.quests.SituationKind.PARKING)
+        capture("parking-complete.png");Thread.sleep(1800)
         return JSONObject().apply {
-            put("complete",complete);put("lanes",org.json.JSONArray(lanes.sorted()));put("states",org.json.JSONArray(states))
-            put("firstMarker",firstMarker);put("endMarker",endMarker);put("pauseFreezesMap",true);put("controlsRoundTrip",true)
-            put("maxModelSpeedMps",maxSpeed);put("maxActualSdkSpeedMps",maxVehicleSpeed);put("emulatorStayedParked",true)
+            put("complete",true);put("states",org.json.JSONArray(states));put("completeState",JSONObject(completeData))
+            put("questEvidenceAdded",after.evidence.size-before);put("pauseFreezesMap",true);put("replayVehicleSpeedMps",maxSdk)
+            put("actualSdkSpeedMps",actual);put("sdkDistanceMetres",sdkDistance);put("sdkElapsedMs",sdkElapsed)
+            put("externalConsoleOwnershipPreserved",true)
+            put("maxSteeringDegrees",maxSteering);put("celebrationSounds",sounds);put("ambientPulseConfirmedAndRestored",true)
+            put("parkingComplete",parked);put("parkingEvidenceAdded",1);put("visualProfileTested",true)
         }
     }
     private fun runAutomaticPlayback(a: DrivingSimulatorActivity): JSONObject {

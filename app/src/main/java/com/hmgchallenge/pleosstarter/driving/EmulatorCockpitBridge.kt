@@ -67,10 +67,10 @@ class EmulatorCockpitBridge(context: Context,private val status: (String)->Unit)
             return connection.inputStream.bufferedReader().use {it.readText()}
         } finally {connection.disconnect()}
     }
-    fun stop() {
-        if(closed)return
+    fun stop(onStopped: ()->Unit = {}) {
+        if(closed){main.post(onStopped);return}
         closed=true
-        if(!enabled){worker.shutdownNow();return}
+        if(!enabled){worker.shutdownNow();main.post(onStopped);return}
         worker.execute {
             runCatching {request("POST","/browser/session?client=$client")}
             runCatching {request("PUT","/vehicle/controls?speed=0&accelerator=0&brake=0&steering=0")}
@@ -83,6 +83,7 @@ class EmulatorCockpitBridge(context: Context,private val status: (String)->Unit)
             }
             runCatching {request("POST","/browser/session?client=$client&closing=1")}
             worker.shutdown()
+            main.post(onStopped)
         }
     }
     companion object {

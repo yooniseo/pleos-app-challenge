@@ -10,6 +10,11 @@ class SimulatorWheelView(context: Context) : View(context) {
     var angle=0.0
     var target=0.0
     var onSteer: (Double)->Unit={}
+    var interactive=true
+    var wheelColor=Color.rgb(230,239,244)
+    var targetColor=Color.rgb(101,233,197)
+    var labelColor=Color.WHITE
+    var showAngle=true
     private val p=Paint(Paint.ANTI_ALIAS_FLAG)
     private var lastTouch=0.0
     init {contentDescription="조작 가능한 핸들. 좌우로 돌려 현재 조향각을 바꿔요."}
@@ -21,12 +26,13 @@ class SimulatorWheelView(context: Context) : View(context) {
             p.style=Paint.Style.FILL;c.drawCircle(cx,cy,r*0.25f,p)
             p.color=Color.rgb(255,194,94);c.drawRoundRect(cx-r*0.05f,cy-r*1.02f,cx+r*0.05f,cy-r*0.82f,3f,3f,p);c.restore()
         }
-        wheel(target,Color.rgb(101,233,197),70);wheel(angle,Color.rgb(230,239,244),255)
-        p.textSize=14*resources.displayMetrics.scaledDensity;p.textAlign=Paint.Align.CENTER;p.color=Color.WHITE
-        c.drawText("${angle.roundToInt()}°",cx,min(cy+r+28*resources.displayMetrics.density,height-8*resources.displayMetrics.density),p)
+        wheel(target,targetColor,70);wheel(angle,wheelColor,255)
+        p.textSize=if(interactive)14*resources.displayMetrics.scaledDensity else width*.12f;p.textAlign=Paint.Align.CENTER;p.color=labelColor
+        if(showAngle)c.drawText("${angle.roundToInt()}°",cx,min(cy+r+28*resources.displayMetrics.density,height-8*resources.displayMetrics.density),p)
         p.textAlign=Paint.Align.LEFT
     }
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if(!interactive)return false
         val current=Math.toDegrees(atan2((e.y-height/2).toDouble(),(e.x-width/2).toDouble()))
         when(e.actionMasked) {
             MotionEvent.ACTION_DOWN->{lastTouch=current;parent?.requestDisallowInterceptTouchEvent(true);return true}
