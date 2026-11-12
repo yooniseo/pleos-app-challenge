@@ -14,6 +14,14 @@ import java.net.URL
 
 /** Touch controls -> Virtual Console state -> actual speed/blinker SDK callbacks. Emulator only. */
 open class CockpitSmokeRunner : Instrumentation() {
+    private var automaticProbe=false
+    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);automaticProbe=arguments?.getString("auto_probe")=="1"}
+    override fun runOnMainSync(runner: Runnable) {
+        // Keep test assertion failures on the instrumentation thread so finally restores user data.
+        var failure: Throwable?=null
+        super.runOnMainSync {try {runner.run()}catch(error: Throwable){failure=error}}
+        failure?.let {throw it}
+    }
     override fun onStart() {
         val result=Bundle();var a: DrivingSimulatorActivity?=null;var launcher: Activity?=null;var code=Activity.RESULT_OK
         val demo=QuestStore(targetContext,true);val before=demo.load();val personal=QuestStore(targetContext,false).load()
@@ -44,6 +52,17 @@ open class CockpitSmokeRunner : Instrumentation() {
                 if(a.resources.configuration.screenWidthDp>=760)check(left.right<=right.left) {"Coach and controls overlap"}
             }
             capture("cockpit-ready.png")
+            if(automaticProbe) {
+                val proof=runAutomaticPlayback(a)
+                runOnMainSync {a.finish()};Thread.sleep(2_500)
+                val after=consoleState()
+                check(after.getJSONObject("controls").getInt("speed_kph")==0)
+                check(after.getJSONObject("gear").getJSONObject("actual").getString("value")=="Park")
+                check(QuestStore(targetContext,false).load()==personal)
+                proof.put("after",after);proof.put("result","PASS_AUTO_PLAYBACK")
+                File(targetContext.filesDir,"auto-playback-proof.json").writeText(proof.toString(2))
+                result.putString("result","PASS_AUTO_PLAYBACK")
+            } else {
             click(a,"sim_brake");Thread.sleep(250)
             runOnMainSync {check(a.simulatorForDiagnostics().brake==80.0)}
             click(a,"sim_brake")
@@ -122,6 +141,7 @@ open class CockpitSmokeRunner : Instrumentation() {
             }
             File(targetContext.filesDir,"cockpit-proof.json").writeText(proof.toString(2))
             result.putString("result","PASS_COCKPIT_CONTROLS")
+            }
         } catch(error: Throwable) {code=Activity.RESULT_CANCELED;result.putString("result","FAIL: ${error.stackTraceToString()}")}
         finally {
             a?.let {runOnMainSync {it.finish()}};launcher?.let {runOnMainSync {it.finish()}}
@@ -130,6 +150,49 @@ open class CockpitSmokeRunner : Instrumentation() {
             simulatorPrefs.edit().apply {if(priorReport==null)remove("last_report")else putString("last_report",priorReport)}.commit()
         }
         finish(code,result)
+    }
+    private fun runAutomaticPlayback(a: DrivingSimulatorActivity): JSONObject {
+        click(a,"sim_auto")
+        val deadline=android.os.SystemClock.elapsedRealtime()+180_000
+        val stages=linkedSetOf<SimStage>();var complete=false;var maxSdkSpeed=0f
+        do {
+            var stage=SimStage.PREPARE
+            runOnMainSync {
+                stage=a.simulatorForDiagnostics().stage
+                check(!a.pausedForDiagnostics()) {"Automatic playback paused at $stage"}
+                check(a.automaticForDiagnostics() || stage==SimStage.COMPLETE) {"Automatic playback stopped at $stage"}
+                maxSdkSpeed=maxOf(maxSdkSpeed,a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f)
+            }
+            if(stages.add(stage) && stage in setOf(SimStage.EXIT_TURN,SimStage.LANE_OUT,SimStage.TURN))capture("auto-${stage.name.lowercase()}.png")
+            complete=stage==SimStage.COMPLETE
+            if(!complete)Thread.sleep(300)
+        } while(!complete && android.os.SystemClock.elapsedRealtime()<deadline)
+        check(complete) {"Automatic playback did not finish: $stages"}
+        check(maxSdkSpeed>0) {"No actual emulator speed observed"}
+        runOnMainSync {
+            val m=a.simulatorForDiagnostics()
+            check(m.lanesRemaining==0 && m.gear==SimGear.P && m.parkingBrake && m.stopped)
+            check(m.practices.count {it.id.startsWith("lane")}==2)
+        }
+        capture("auto-complete.png")
+        click(a,"sim_rain");click(a,"sim_auto");Thread.sleep(1_500)
+        runOnMainSync {check(a.simulatorForDiagnostics().rain && a.simulatorForDiagnostics().wiper==2)}
+        click(a,"sim_pause")
+        runOnMainSync {
+            check(a.pausedForDiagnostics())
+            check(a.window.decorView.findViewWithTag<Button>("sim_resume_inline").isShown)
+            check(a.window.decorView.findViewWithTag<android.widget.TextView>("sim_cue").text.contains("일시정지"))
+        }
+        click(a,"sim_check")
+        runOnMainSync {check(a.pausedForDiagnostics());check(!a.automaticForDiagnostics())}
+        click(a,"sim_resume_inline")
+        runOnMainSync {check(!a.pausedForDiagnostics())}
+        click(a,"sim_auto");Thread.sleep(300);click(a,"sim_steer_right")
+        runOnMainSync {check(!a.automaticForDiagnostics());check(a.simulatorForDiagnostics().steering==15.0)}
+        return JSONObject().apply {
+            put("stages",org.json.JSONArray(stages.map {it.name}));put("maxActualSdkSpeedMps",maxSdkSpeed)
+            put("complete",true);put("pausePromptVisible",true);put("manualOverride",true)
+        }
     }
     private fun consoleState(): JSONObject {
         val c=URL("http://127.0.0.1:8088/vehicle/state").openConnection() as HttpURLConnection

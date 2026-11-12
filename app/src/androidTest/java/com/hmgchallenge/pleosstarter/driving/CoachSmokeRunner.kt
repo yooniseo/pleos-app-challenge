@@ -23,7 +23,7 @@ class CoachSmokeRunner : CockpitSmokeRunner() {
     private var minimumObservationSeconds=0
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments);live=arguments?.getString("live_probe")=="1"
-        cockpitProbe=arguments?.getString("cockpit_probe")=="1"
+        cockpitProbe=arguments?.getString("cockpit_probe")=="1" || arguments?.getString("auto_probe")=="1"
         strict=arguments?.getString("strict_live")=="1"
         seconds=arguments?.getString("seconds")?.toIntOrNull()?.coerceIn(15,180) ?: 90
         actionDemo=arguments?.getString("action_demo")=="1"

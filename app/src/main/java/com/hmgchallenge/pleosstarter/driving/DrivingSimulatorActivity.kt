@@ -28,6 +28,9 @@ class DrivingSimulatorActivity : Activity() {
     private var voice: PleosCoachVoice?=null
     private var active=false
     private var paused=false
+    private var pauseReason=""
+    private var automatic=false
+    private var autoDriver=TrainingAutoDriver()
     private var tripId=UUID.randomUUID().toString()
     private val recorded=mutableSetOf<String>()
     private val mint=Color.rgb(101,233,197)
@@ -37,6 +40,8 @@ class DrivingSimulatorActivity : Activity() {
     private lateinit var controlsStateView: TextView
     private lateinit var coachVoiceView: TextView
     private lateinit var coachVoiceButton: Button
+    private lateinit var movementHintView: TextView
+    private lateinit var resumeRow: LinearLayout
     private lateinit var cueView: TextView
     private lateinit var stageView: TextView
     private lateinit var feedbackView: TextView
@@ -52,6 +57,7 @@ class DrivingSimulatorActivity : Activity() {
     private lateinit var pauseButton: Button
     private lateinit var brakeButton: Button
     private lateinit var acceleratorButton: Button
+    private lateinit var autoButton: Button
     private var voiceEnabled=false
     private var lastCue=""
     private var lastStage: SimStage?=null
@@ -95,10 +101,14 @@ class DrivingSimulatorActivity : Activity() {
     private val loop=object : Runnable {
         override fun run() {
             if(!active)return
-            if(!paused)model.tick(0.05)
+            if(!paused) {
+                if(automatic)autoDriver.update(model,0.05)
+                model.tick(0.05)
+                if(automatic && model.stage==SimStage.COMPLETE) {automatic=false;model.freeze()}
+            }
             saveNewPractice();render()
             bridge?.update(EmulatorCockpitBridge.Controls(model.gear,model.signal,model.steering.roundToInt(),
-                model.accelerator.roundToInt(),model.brake.roundToInt(),(model.speed*3.6).roundToInt(),model.windowOpen,model.wiper))
+                model.accelerator.roundToInt(),model.brake.roundToInt(),(model.speed*3.6).roundToInt(),model.windowOpen,model.wiper,automatic))
             handler.postDelayed(this,50)
         }
     }
@@ -113,7 +123,21 @@ class DrivingSimulatorActivity : Activity() {
         button(header,"체험 끝내기","sim_close") {finish()}
         button(header,"시나리오 선택","sim_scenario") {chooseScenario()}
         button(header,"처음부터","sim_restart") {reset(model.turnRight,model.laneRight)}
-        pauseButton=button(header,"일시정지","sim_pause") {paused=!paused;if(paused)model.freeze();render()}
+        autoButton=button(header,"자동 시연 시작","sim_auto") {
+            if(automatic) {
+                automatic=false;paused=true;pauseReason="자동 시연을 멈췄어요. ‘계속하기’로 수동 운전을 이어갈 수 있어요.";model.freeze();voice?.stop();render()
+            } else {
+                if(model.practices.isNotEmpty() || coachNotes.isNotEmpty())getSharedPreferences("driver_simulator",MODE_PRIVATE).edit().putString("last_report",reportText()).apply()
+                val rainy=model.rain
+                reset(model.turnRight,model.laneRight);model.rain=rainy;autoDriver=TrainingAutoDriver();automatic=true;render()
+                if(voiceEnabled)voice?.speak("가상 시나리오를 처음부터 자동으로 시연할게요. 직접 조작하면 수동으로 바뀌어요.")
+            }
+        }
+        pauseButton=button(header,"일시정지","sim_pause") {
+            if(paused)resumeTraining() else {
+                paused=true;pauseReason="일시정지 버튼으로 체험을 멈췄어요.";voice?.stop();model.freeze();render()
+            }
+        }
         button(header,"피드백","sim_feedback") {showFeedback()}
         val wide=resources.configuration.screenWidthDp>=760
         val panels=LinearLayout(this).apply {orientation=if(wide)LinearLayout.HORIZONTAL else LinearLayout.VERTICAL}
@@ -131,6 +155,11 @@ class DrivingSimulatorActivity : Activity() {
         text(coach,"주행 코치  ·  시뮬레이션 입력 연결",18f,mint)
         stageView=text(coach,"",16f,muted)
         cueView=text(coach,"",23f,Color.WHITE).apply {tag="sim_cue";setTypeface(null,Typeface.BOLD)}
+        resumeRow=row(coach)
+        button(resumeRow,"▶ 계속하기","sim_resume_inline") {resumeTraining()}.apply {
+            textSize=19f;minHeight=dp(60);backgroundTintList=android.content.res.ColorStateList.valueOf(Color.rgb(36,111,97))
+        }
+        movementHintView=text(coach,"",16f,Color.rgb(255,204,133)).apply {tag="sim_movement_hint"}
         stateView=text(coach,"",16f,muted).apply {tag="sim_state"}
         road=SimulatorRoadView(this,model).apply {tag="sim_road"}
         coach.addView(road,LinearLayout.LayoutParams(-1,dp(if(wide)285 else 180)).apply {topMargin=dp(8)})
@@ -149,18 +178,18 @@ class DrivingSimulatorActivity : Activity() {
             toast("주행 피드백에 이 순간을 기록했어요");render()
         }
         coachVoiceView=text(coach,"",12f,muted)
-        text(coach,"차로 수·위치·신호·보행자는 이 연습의 가상 상태입니다. 개인 실주행 기록과 구분해 저장해요.",12f,muted)
+        text(coach,"자동 시연은 처음부터 안내대로 가상 조작을 재생해요. 신호·주변 확인도 가상 입력이며 개인 실주행 기록과 구분해요.",12f,muted)
         val controls=pane("training_controls_panel",1.05f)
         text(controls,"운전석 조작판",18f,mint)
         controlsStateView=text(controls,"",13f,muted).apply {tag="sim_controls_state"}
         text(controls,"핸들을 드래그하거나 슬라이더로 돌려요",13f,muted)
-        wheel=SimulatorWheelView(this).apply {tag="sim_wheel";onSteer={model.steer(it);render()}}
+        wheel=SimulatorWheelView(this).apply {tag="sim_wheel";onSteer={automatic=false;model.steer(it);render()}}
         controls.addView(wheel,LinearLayout.LayoutParams(-1,dp(155)))
         targetView=text(controls,"",16f,mint).apply {tag="sim_target"}
         steeringSlider=SeekBar(this).apply {
             tag="sim_steering";max=900;progress=450
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(v: SeekBar?,p: Int,fromUser: Boolean) {if(fromUser){model.steer((p-450).toDouble());render()}}
+                override fun onProgressChanged(v: SeekBar?,p: Int,fromUser: Boolean) {if(fromUser){automatic=false;model.steer((p-450).toDouble());render()}}
                 override fun onStartTrackingTouch(v: SeekBar?) {}
                 override fun onStopTrackingTouch(v: SeekBar?) {}
             })
@@ -174,6 +203,7 @@ class DrivingSimulatorActivity : Activity() {
         acceleratorButton=pedal(pedals,"액셀 켜기","sim_accelerator",false)
         button(pedals,"페달 모두 떼기","sim_pedals_release") {model.pedals(0.0,0.0);render()}
         text(controls,"페달은 클릭 한 번으로 유지, 다시 클릭하면 해제돼요.",12f,muted)
+        text(controls,"자동 시연 중 오른쪽을 직접 조작하면 수동 운전으로 바뀌어요.",12f,muted)
         val gears=row(controls)
         SimGear.values().forEach {g->button(gears,g.name,"sim_gear_$g") {if(!model.selectGear(g))toast(model.feedback);render()}}
         val preparations=row(controls)
@@ -184,7 +214,11 @@ class DrivingSimulatorActivity : Activity() {
         button(signals,"깜빡이 끄기","sim_signal_off") {model.setSignal(SimSignal.OFF);render()}
         button(signals,"오른쪽 깜빡이 →","sim_signal_right") {model.setSignal(SimSignal.RIGHT);render()}
         val surroundings=row(controls)
-        button(surroundings,"미러·주변 확인 입력","sim_check") {model.checkMirrors();render()}
+        button(surroundings,"미러·주변 확인 입력","sim_check") {
+            model.checkMirrors()
+            if(paused)toast("주변 확인은 기록했어요. ‘계속하기’를 눌러 체험을 이어가요.")
+            render()
+        }
         button(surroundings,"와이퍼 단계 변경","sim_wiper") {model.wiper=(model.wiper+1)%4;render()}
         val body=row(controls)
         button(body,"창문 열기 50%","sim_window_open") {model.windowOpen=50;render()}
@@ -206,8 +240,17 @@ class DrivingSimulatorActivity : Activity() {
     }.apply {minHeight=dp(72)}
     private fun render() {
         if(!::wheel.isInitialized)return
-        stageView.text=(if(paused)"일시정지 · " else "")+model.stage.title.replace("왼쪽",model.laneDirection)
-        val cue=model.instruction();cueView.text=cue
+        stageView.text=(if(paused)"일시정지 · " else if(automatic)"자동 시연 · " else "수동 운전 · ")+model.stage.title.replace("왼쪽",model.laneDirection)
+        stageView.setTextColor(if(paused)Color.rgb(255,204,133) else muted)
+        val cue=model.instruction()
+        cueView.text=if(paused)"일시정지 중이에요. ‘계속하기’를 눌러 체험을 이어가요." else cue
+        resumeRow.visibility=if(paused)View.VISIBLE else View.GONE
+        movementHintView.text=when {
+            paused->pauseReason.ifBlank {"안내와 조작 입력은 보이지만 차량 이동은 잠시 멈춘 상태예요."}
+            automatic->"자동 시연 중 · 벨트·기어·깜빡이·핸들·페달과 가상 주변 상황을 순서대로 조작해요."
+            else->model.movementHint().orEmpty()
+        }
+        movementHintView.visibility=if(movementHintView.text.isBlank())View.GONE else View.VISIBLE
         stateView.text="${model.gear}단 · ${"%.1f".format(java.util.Locale.US,model.speed*3.6)}km/h · 핸들 ${model.steering.roundToInt()}° · 깜빡이 ${when(model.signal){SimSignal.OFF->"꺼짐";SimSignal.LEFT->"왼쪽";SimSignal.RIGHT->"오른쪽"}}\n"+
             "현재 ${model.currentLane}차로 → 목표 ${model.targetLane}차로 · ${model.lanesRemaining}개 남음"
         controlsStateView.text="액셀 ${model.accelerator.roundToInt()}% · 브레이크 ${model.brake.roundToInt()}% · 창문 ${model.windowOpen}% · 와이퍼 ${listOf("OFF","AUTO","LOW","HIGH")[model.wiper]}"
@@ -221,17 +264,26 @@ class DrivingSimulatorActivity : Activity() {
         greenButton.text="체험 신호 ${if(model.green)"초록" else "빨강"}"
         pedestrianButton.text="보행자 접근 ${if(model.pedestrian)"있음" else "없음"}"
         pauseButton.text=if(paused)"계속하기" else "일시정지"
+        autoButton.text=if(automatic)"자동 시연 멈추기" else "자동 시연 시작"
+        autoButton.backgroundTintList=android.content.res.ColorStateList.valueOf(if(automatic)Color.rgb(147,96,40) else Color.rgb(36,111,97))
+        pauseButton.backgroundTintList=android.content.res.ColorStateList.valueOf(if(paused)Color.rgb(36,111,97) else Color.rgb(41,66,79))
         brakeButton.text=if(model.brake>0)"브레이크 유지 중\n클릭하면 해제" else "브레이크 켜기"
-        acceleratorButton.text=if(model.accelerator>0)"액셀 유지 중\n클릭하면 해제" else "액셀 켜기"
+        acceleratorButton.text=if(model.accelerator>0) {
+            if(paused)"액셀 입력 대기\n계속하기 후 적용" else "액셀 유지 중\n클릭하면 해제"
+        } else "액셀 켜기"
         brakeButton.backgroundTintList=android.content.res.ColorStateList.valueOf(if(model.brake>0)Color.rgb(147,69,54) else Color.rgb(41,66,79))
         acceleratorButton.backgroundTintList=android.content.res.ColorStateList.valueOf(if(model.accelerator>0)Color.rgb(36,111,97) else Color.rgb(41,66,79))
         coachVoiceButton.text=if(voiceEnabled)"음성 끄기" else "음성 켜기"
         coachVoiceView.text="코치 음성 ${if(voiceEnabled)"ON" else "OFF"} · $voiceStatus\n기억한 순간 ${coachNotes.size}개 · 피드백에서 돌아볼 수 있어요"
         linkView.text="$bridgeStatus\nSDK 관측 · 속도 ${sdkSpeed?.let {"%.1f km/h".format(java.util.Locale.US,it*3.6)} ?: "응답 대기"} · 깜빡이 ${sdkSignal.name}"
-        if(model.feedback!=lastFeedback && model.feedback.startsWith("좋아요")) {lastFeedback=model.feedback;if(voiceEnabled)voice?.speak(model.feedback)}
+        if(model.feedback!=lastFeedback && model.feedback.startsWith("좋아요")) {lastFeedback=model.feedback;if(voiceEnabled && !paused)voice?.speak(model.feedback)}
         if(model.stage!=lastStage || (cue!=lastCue && (cue.contains("깜빡이") || model.stage==SimStage.PREPARE || model.stage==SimStage.TURN_CHECK))) {
-            lastStage=model.stage;lastCue=cue;if(active && voiceEnabled)voice?.speak(cue)
+            lastStage=model.stage;lastCue=cue;if(active && voiceEnabled && !paused)voice?.speak(cue)
         }
+    }
+    private fun resumeTraining() {
+        paused=false;pauseReason="";render()
+        if(voiceEnabled)voice?.speak(model.instruction())
     }
     private fun saveNewPractice() {
         val skillById=mapOf("prepare" to CoachSkill.PREPARATION,"lane1" to CoachSkill.LANE_CHANGE,"lane2" to CoachSkill.LANE_CHANGE,"lane3" to CoachSkill.LANE_CHANGE,
@@ -247,17 +299,18 @@ class DrivingSimulatorActivity : Activity() {
         }
     }
     private fun chooseScenario() {
-        model.freeze();paused=true
+        model.freeze();paused=true;pauseReason="시나리오를 선택하는 동안 잠시 멈췄어요."
         AlertDialog.Builder(this).setTitle("차로 변경 방향 / 교차로 회전 방향")
             .setItems(arrayOf("왼쪽 2개 차로 → 우회전","오른쪽 2개 차로 → 우회전","왼쪽 2개 차로 → 좌회전","오른쪽 2개 차로 → 좌회전")) {_,which->reset(which<2,which%2==1)}
             .setNegativeButton("계속하기") {_,_->paused=false}.setOnCancelListener {paused=false}.show()
     }
     private fun reset(right: Boolean,laneRight: Boolean) {
+        automatic=false
         voice?.stop()
         model.freeze();model=DrivingSimulator(right,laneRight);tripId=UUID.randomUUID().toString();recorded.clear();coachNotes.clear();paused=false;lastStage=null;lastCue="";lastFeedback="";render()
     }
     private fun showFeedback() {
-        voice?.stop();model.freeze();paused=true
+        voice?.stop();model.freeze();paused=true;pauseReason="주행 피드백을 확인하는 동안 잠시 멈췄어요."
         val report=reportText()
         getSharedPreferences("driver_simulator",MODE_PRIVATE).edit().putString("last_report",report).apply()
         AlertDialog.Builder(this).setTitle("운전석 체험 피드백").setMessage(report)
@@ -270,6 +323,7 @@ class DrivingSimulatorActivity : Activity() {
         if(coachNotes.isEmpty())"" else "\n\n기억한 순간\n"+coachNotes.joinToString("\n")
     fun simulatorForDiagnostics()=model
     fun pausedForDiagnostics()=paused
+    fun automaticForDiagnostics()=automatic
     fun sdkForDiagnostics()=mapOf("speedMps" to sdkSpeed.toString(),"indicator" to sdkSignal.name,"bridge" to bridgeStatus)
     private fun toast(value: String)=Toast.makeText(this,value,Toast.LENGTH_SHORT).show()
     private fun dp(v: Int)=(v*resources.displayMetrics.density).toInt()
@@ -281,17 +335,22 @@ class DrivingSimulatorActivity : Activity() {
     }
     private fun button(parent: LinearLayout,value: String,key: String,action: ()->Unit)=Button(this).apply {
         text=value;tag=key;textSize=14f;isAllCaps=false;minHeight=dp(48);setTextColor(Color.WHITE)
-        backgroundTintList=android.content.res.ColorStateList.valueOf(Color.rgb(41,66,79));setOnClickListener {action()}
+        backgroundTintList=android.content.res.ColorStateList.valueOf(Color.rgb(41,66,79));setOnClickListener {
+            if(key.startsWith("sim_gear_") || key.startsWith("sim_steer_") || key.startsWith("sim_signal_") ||
+                key in setOf("sim_brake","sim_accelerator","sim_pedals_release","sim_parking_brake","sim_belt","sim_check","sim_wiper","sim_window_open","sim_window_close","sim_green","sim_pedestrian","sim_rain"))automatic=false
+            action()
+        }
         parent.addView(this,LinearLayout.LayoutParams(0,-2,1f).apply {rightMargin=dp(5)})
     }
     override fun onPause() {
-        if(active) {voice?.stop();model.freeze();paused=true;render()}
+        if(active) {voice?.stop();model.freeze();paused=true;pauseReason="시스템 카메라 등 다른 화면으로 전환되어 체험을 멈췄어요.";render()}
         super.onPause()
     }
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {super.onConfigurationChanged(newConfig);build()}
     override fun onStop() {
         if(model.practices.isNotEmpty() || coachNotes.isNotEmpty())getSharedPreferences("driver_simulator",MODE_PRIVATE).edit().putString("last_report",reportText()).apply()
         active=false;model.freeze();paused=true;handler.removeCallbacksAndMessages(null);bridge?.stop();bridge=null;voice?.release();voice=null
+        automatic=false
         sdkSource?.stop();sdkSource=null;sdkSpeedSource?.stop();sdkSpeedSource=null;super.onStop()
     }
 }

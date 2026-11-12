@@ -127,6 +127,20 @@ class DrivingSimulator(val turnRight: Boolean=true,val laneRight: Boolean=false)
             SimStage.COMPLETE->Unit
         }
     }
+    /** Explains a stopped training car without advancing the scenario or touching pedals. */
+    fun movementHint(): String? {
+        val needsMotion=stage in setOf(SimStage.EXIT_TURN,SimStage.LANE_OUT,SimStage.LANE_RETURN,SimStage.TURN) ||
+            (stage==SimStage.REVERSE && stageTravel<3) ||
+            (stage==SimStage.APPROACH && stageTravel<10) || (stage==SimStage.FINAL_STOP && stageTravel<3)
+        if(!needsMotion)return null
+        if(!belt)return "벨트가 미착용 상태예요. 정차 중 ‘벨트 미착용’을 눌러 착용해 주세요."
+        if(parkingBrake)return "사이드브레이크가 체결되어 있어요. 정차 중 해제한 뒤 진행해요."
+        val expected=if(stage==SimStage.REVERSE)SimGear.R else SimGear.D
+        if(gear!=expected)return "현재 ${gear}단이에요. 완전히 정차하고 브레이크를 켠 채 ${expected}단으로 바꿔 주세요."
+        if(brake>0)return "브레이크가 켜져 있어 이동을 멈추고 있어요. 이동할 때 ‘액셀 켜기’를 누르면 브레이크가 풀려요."
+        if(accelerator==0.0 && stopped)return "주변 확인 입력은 자동 출발이 아니에요. 준비되면 오른쪽의 ‘액셀 켜기’를 눌러 이동해요."
+        return null
+    }
     fun instruction(): String {
         val direction=if(expectedSignal==SimSignal.LEFT)"왼쪽" else "오른쪽"
         if(stage==SimStage.PREPARE)return when {
