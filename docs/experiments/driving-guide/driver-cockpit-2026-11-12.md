@@ -101,3 +101,9 @@ Figma `Sqpacf0pJmLc2RNnZBUrqo`, `73:10511`을 기준으로 기본 시뮬레이�
 - 단위 검사 83개 및 빌드/Lint 통과. `navigation_probe=1`: PASS_FIGMA_NAVIGATION. 실제 타일 표시, 차량 위치 이동, 1→2→3차로, 회전/완료, 일시정지 지도 고정, 조작판 왕복, 실제 SDK 속도 수신, 종료 후 P/0km/h 및 개인 프로필 유지 확인.
 
 자산 출처: [Figma UI](https://www.figma.com/design/Sqpacf0pJmLc2RNnZBUrqo?node-id=73-10511), [Asta Sans / OFL](https://github.com/42dot/Asta-Sans), [AndroidSVG / Apache 2.0](https://github.com/BigBadaboom/androidsvg), [OSRM](https://project-osrm.org/docs/v5.24.0/api/). 폰트와 렌더러의 라이선스 원문은 APK assets에 포함했다.
+
+## 지도 시연 중 주행 차단 재발 수정
+
+지도 시연이 실제 에뮬레이터 입력을 D/6km/h로 바꾸던 상태에서 주차 전용 코치로 전환되면 OEM 차단 화면이 나타났다. 지도 화면과 자동 시연은 이제 차량 입력 P/0km/h를 유지하며 앱 내부의 차량·지도·경로를 움직인다. 화면의 속도는 앱 모형의 속도다. 수동 운전석의 기존 콘솔 입력 연동은 별도로 유지한다. 자동 시연의 실제 SDK 속도는 0으로 검증하고 앱 모형 이동은 별도로 검증한다.
+
+시뮬레이터 자동 진입은 코치 onStart의 지연 작업에서 onResume으로 옮겼다. 이전에는 화면이 잠시 가려지면 진입 요청을 소모하고도 열지 못할 수 있었다. 실행 스크립트의 Cockpit 강제 종료(-S)도 제거했다. 개발용 DO 선언과 release 주행 제한은 변경하지 않았다. **이 수정은 정차 상태의 지도 시연을 위한 것이며 실차 주행 중 사용 승인 완료를 의미하지 않는다.**

@@ -165,12 +165,13 @@ open class CockpitSmokeRunner : Instrumentation() {
         check(ready) {"Navigation tiles did not load"};capture("figma-navigation-ready.png")
         click(a,"nav_auto")
         val states=mutableListOf<JSONObject>();val seen=mutableSetOf<SimStage>();val lanes=mutableSetOf<Int>()
-        var complete=false;var firstMarker="";var endMarker="";var pausedMarker="";var maxSpeed=0f
+        var complete=false;var firstMarker="";var endMarker="";var pausedMarker="";var maxSpeed=0f;var maxVehicleSpeed=0f
         do {
             var stage=SimStage.PREPARE;var data=emptyMap<String,String>()
             runOnMainSync {
                 val m=a.simulatorForDiagnostics();stage=m.stage;data=a.navigationForDiagnostics()
-                lanes.add(m.currentLane);maxSpeed=maxOf(maxSpeed,a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f)
+                lanes.add(m.currentLane);maxSpeed=maxOf(maxSpeed,m.speed.toFloat())
+                maxVehicleSpeed=maxOf(maxVehicleSpeed,a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f)
                 check(a.window.decorView.findViewWithTag<android.view.View>("navigation_panel").isShown)
                 check(!a.pausedForDiagnostics())
             }
@@ -191,19 +192,21 @@ open class CockpitSmokeRunner : Instrumentation() {
             if(!complete)Thread.sleep(250)
         }while(!complete && android.os.SystemClock.elapsedRealtime()<deadline)
         check(complete && lanes==setOf(1,2,3));check(firstMarker!=endMarker);check(maxSpeed>0)
+        check(maxVehicleSpeed<0.1f) {"Map playback must leave the emulator parked"}
         click(a,"nav_controls")
         runOnMainSync {check(a.window.decorView.findViewWithTag<android.view.View>("training_controls_panel").isShown)}
         click(a,"sim_navigation")
         runOnMainSync {check(a.window.decorView.findViewWithTag<android.view.View>("navigation_panel").isShown)}
         return JSONObject().apply {
             put("complete",complete);put("lanes",org.json.JSONArray(lanes.sorted()));put("states",org.json.JSONArray(states))
-            put("firstMarker",firstMarker);put("endMarker",endMarker);put("pauseFreezesMap",true);put("controlsRoundTrip",true);put("maxActualSdkSpeedMps",maxSpeed)
+            put("firstMarker",firstMarker);put("endMarker",endMarker);put("pauseFreezesMap",true);put("controlsRoundTrip",true)
+            put("maxModelSpeedMps",maxSpeed);put("maxActualSdkSpeedMps",maxVehicleSpeed);put("emulatorStayedParked",true)
         }
     }
     private fun runAutomaticPlayback(a: DrivingSimulatorActivity): JSONObject {
         click(a,"sim_auto")
         val deadline=android.os.SystemClock.elapsedRealtime()+180_000
-        val stages=linkedSetOf<SimStage>();var complete=false;var maxSdkSpeed=0f
+        val stages=linkedSetOf<SimStage>();var complete=false;var maxSdkSpeed=0f;var maxModelSpeed=0.0
         var physicalTurnLane=0;var stopLineClearance=0.0;var turnMidCaptured=false;val crosswalks=mutableSetOf<Int>()
         do {
             var stage=SimStage.PREPARE
@@ -212,6 +215,7 @@ open class CockpitSmokeRunner : Instrumentation() {
                 check(!a.pausedForDiagnostics()) {"Automatic playback paused at $stage"}
                 check(a.automaticForDiagnostics() || stage==SimStage.COMPLETE) {"Automatic playback stopped at $stage"}
                 maxSdkSpeed=maxOf(maxSdkSpeed,a.sdkForDiagnostics()["speedMps"]?.toFloatOrNull() ?: 0f)
+                maxModelSpeed=maxOf(maxModelSpeed,a.simulatorForDiagnostics().speed)
                 val m=a.simulatorForDiagnostics()
                 if(stage==SimStage.TURN_CHECK) {
                     physicalTurnLane=m.road.eastboundLane(m.y) ?: 0
@@ -232,7 +236,7 @@ open class CockpitSmokeRunner : Instrumentation() {
             if(!complete)Thread.sleep(300)
         } while(!complete && android.os.SystemClock.elapsedRealtime()<deadline)
         check(complete) {"Automatic playback did not finish: $stages"}
-        check(maxSdkSpeed>0) {"No actual emulator speed observed"}
+        check(maxModelSpeed>1 && maxSdkSpeed<0.1) {"Playback must move the app model while keeping the vehicle parked"}
         check(turnMidCaptured && crosswalks.containsAll(listOf(0,3))) {"Near/outgoing crosswalks not traversed: $crosswalks"}
         runOnMainSync {
             val m=a.simulatorForDiagnostics()
@@ -255,7 +259,7 @@ open class CockpitSmokeRunner : Instrumentation() {
         click(a,"sim_auto");Thread.sleep(300);click(a,"sim_steer_right")
         runOnMainSync {check(!a.automaticForDiagnostics());check(a.simulatorForDiagnostics().steering==15.0)}
         return JSONObject().apply {
-            put("stages",org.json.JSONArray(stages.map {it.name}));put("maxActualSdkSpeedMps",maxSdkSpeed)
+            put("stages",org.json.JSONArray(stages.map {it.name}));put("maxActualSdkSpeedMps",maxSdkSpeed);put("maxModelSpeedMps",maxModelSpeed)
             put("complete",true);put("pausePromptVisible",true);put("manualOverride",true)
             put("physicalTurnLane",physicalTurnLane);put("stopLineClearanceMetres",stopLineClearance)
             put("crossedMainCrosswalks",org.json.JSONArray(crosswalks.sorted()))

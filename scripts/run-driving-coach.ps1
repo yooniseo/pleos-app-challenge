@@ -64,7 +64,7 @@ if($Mode -in @('Verify','Actions')) {
 } elseif($Mode -eq 'Quests') {
     & $adb -s $serial shell am start --user $userId -W -n "$app/.quests.QuestActivity" --ez quest_demo true
 } elseif($Mode -eq 'Cockpit') {
-    & $adb -s $serial shell am start --user $userId -S -W -n "$app/.driving.DrivingCoachActivity" --ez live_mode false --ez open_cockpit true
+    & $adb -s $serial shell am start --user $userId -W -n "$app/.driving.DrivingCoachActivity" --ez live_mode false --ez open_cockpit true
 } else {
     $live=if($Mode -eq 'Live') {'true'} else {'false'}
     & $adb -s $serial shell am start --user $userId -S -W -n "$app/.driving.DrivingCoachActivity" --ez live_mode $live

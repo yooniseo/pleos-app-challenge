@@ -109,7 +109,8 @@ class DrivingSimulatorActivity : Activity() {
             }
             saveNewPractice();render()
             bridge?.update(EmulatorCockpitBridge.Controls(model.gear,model.signal,model.steering.roundToInt(),
-                model.accelerator.roundToInt(),model.brake.roundToInt(),(model.speed*3.6).roundToInt(),model.windowOpen,model.wiper,automatic))
+                model.accelerator.roundToInt(),model.brake.roundToInt(),(model.speed*3.6).roundToInt(),model.windowOpen,model.wiper,
+                automatic || navigation.visibility==View.VISIBLE))
             handler.postDelayed(this,50)
         }
     }

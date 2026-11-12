@@ -138,7 +138,7 @@ class SimulatorNavigationView(context: Context): FrameLayout(context) {
                 else->"${m.road.turnLane}차로에서 정지선 앞 정차를 준비해요."
             }
             text(c,detail,638f,162f,29f,Color.rgb(65,78,84),false)
-            text(c,if(automatic)"자동 시연 중 · 가상 위치 / 가상 3차로 연습" else "시뮬레이션 · 가상 위치 / 가상 3차로 연습",638f,208f,24f,green,false)
+            text(c,if(automatic)"자동 시연 중 · 지도 모형 이동 / 차량 입력 P·0 유지" else "시뮬레이션 · 가상 위치 / 가상 3차로 연습",638f,208f,24f,green,false)
             // Target speed and actual model speed occupy the design's speed widget.
             p.style=Paint.Style.FILL;p.color=Color.WHITE;c.drawCircle(1449f,140f,92f,p)
             p.style=Paint.Style.STROKE;p.color=Color.rgb(216,67,52);p.strokeWidth=13f;c.drawCircle(1449f,140f,86f,p);p.style=Paint.Style.FILL

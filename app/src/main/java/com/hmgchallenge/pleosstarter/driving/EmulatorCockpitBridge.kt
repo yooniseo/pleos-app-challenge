@@ -38,7 +38,9 @@ class EmulatorCockpitBridge(context: Context,private val status: (String)->Unit)
                 val motion=if(requested.gear==SimGear.R)requested.copy(gear=SimGear.P,speed=0,accelerator=0) else requested
                 // Auto playback uses model blinkers, keeping OEM camera popups from interrupting
                 // a scripted demonstration. Manual mode still sends actual console blinker inputs.
-                val value=if(requested.trainingAuto)motion.copy(signal=SimSignal.OFF) else motion
+                // Map playback stays inside the app. Keep the simulated vehicle parked so
+                // leaving this screen cannot strand the parked-only screens at a moving speed.
+                val value=if(requested.trainingAuto)motion.copy(gear=SimGear.P,speed=0,accelerator=0,brake=0,steering=0,signal=SimSignal.OFF) else motion
                 val old=prior
                 if(value.gear!=old?.gear)request("PUT","/vehicle/gear?gear="+when(value.gear){SimGear.P->"Park";SimGear.R->"Reverse";SimGear.N->"Neutral";SimGear.D->"Drive"})
                 if(value.signal!=old?.signal)request("PUT","/vehicle/turn-signal?mode="+when(value.signal){SimSignal.OFF->"Off";SimSignal.LEFT->"BlinkLeft";SimSignal.RIGHT->"BlinkRight"})
@@ -47,7 +49,7 @@ class EmulatorCockpitBridge(context: Context,private val status: (String)->Unit)
                 if(old==null || value.window!=old.window || value.wiper!=old.wiper)
                     request("PUT","/vehicle/body?window_fl=${value.window}&front_wiper="+listOf("Off","Auto","Low","High")[value.wiper.coerceIn(0,3)])
                 prior=value;report(when {
-                    requested.trainingAuto->"자동 시연 · 깜빡이·주변 상황은 앱 모형으로 재생"
+                    requested.trainingAuto->"지도 시연 · 차량 입력 P/0km/h 유지 · 이동은 앱 모형"
                     requested.gear==SimGear.R->"후진 이동은 앱 모형 · 창문·와이퍼·핸들·깜빡이 입력 연동"
                     else->"Pleos 에뮬레이터 입력 연동 · 주차 브레이크·벨트는 앱 모형"
                 })

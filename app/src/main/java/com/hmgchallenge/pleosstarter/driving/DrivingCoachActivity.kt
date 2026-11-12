@@ -117,9 +117,15 @@ class DrivingCoachActivity : Activity() {
         handler.post(tick)
         if (demo && playing) handler.postDelayed(advanceDemo, 7_000)
         updateDriving()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Start only after this Activity is resumed. The former queued onStart action
+        // consumed the request even when Pleos paused the launcher before it executed.
         if(intent.getBooleanExtra("open_cockpit",false) && EmulatorCockpitBridge.isAllowed(this)) {
             intent.removeExtra("open_cockpit")
-            handler.post {if(active)openSimulator()}
+            openSimulator()
         }
     }
 
