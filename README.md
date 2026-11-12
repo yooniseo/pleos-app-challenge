@@ -1,5 +1,11 @@
 # 현대차 공모전 팀 프로젝트 — 나의 드라이브
 
+이 브랜치(`scratch/driving-guide`)는 **Figma 3번 쉬운 주행·주차 안내** 실험입니다. 실행 아이콘은 **튜토리얼 · 주행 코치**입니다. [구현·Pleos API·퀘스트 및 gain 연결 방법](docs/experiments/driving-guide/README.md)을 먼저 확인하세요. 기존 스타터와 퀘스트 브랜치는 보존했습니다.
+
+![주행 코치 시뮬레이션](docs/experiments/driving-guide/images/driving-turn.png)
+
+아래는 기반 스타터의 설명입니다.
+
 속도·네 바퀴 타이어 카드·목적지 안내 요청을 한 화면에서 연습하는 Kotlin 시작 프로젝트입니다. 앱 자체에 지도나 경로 탐색 엔진은 없으며, 실제 길 안내는 Pleos 기본 내비게이션에 요청합니다.
 
 팀 저장소: https://github.com/yooniseo/pleos-app-challenge (비공개, 소유자 yooniseo)
