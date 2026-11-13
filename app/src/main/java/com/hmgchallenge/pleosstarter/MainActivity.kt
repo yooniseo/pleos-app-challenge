@@ -42,6 +42,8 @@ class MainActivity : Activity() {
     private lateinit var openMapButton: Button
     private lateinit var destination: Spinner
     private lateinit var slider: SeekBar
+    private lateinit var sttStatus: TextView
+    private var sttProbe: SttProbe? = null
     private val tires = mutableListOf<TextView>()
     private val wheels = listOf(WheelValue.LEFT_FRONT, WheelValue.RIGHT_FRONT,
         WheelValue.LEFT_REAR, WheelValue.RIGHT_REAR)
@@ -140,6 +142,16 @@ class MainActivity : Activity() {
         naviCard.addView(openMapButton)
         navigationStatus = label("", 14f, muted)
         naviCard.addView(navigationStatus)
+
+        val sttCard = card(content)
+        sttCard.addView(label("음성 메모 테스트 (V2)", 21f))
+        sttCard.addView(label("ON_DEVICE STT로 한 문장을 인식합니다.", 14f, muted))
+        sttStatus = label("대기 중", 16f, accent)
+        sttCard.addView(Button(this).apply {
+            text = "🎤 말하기"; minHeight = dp(64)
+            setOnClickListener { startStt() }
+        })
+        sttCard.addView(sttStatus)
         setContentView(scroll)
     }
 
@@ -290,6 +302,24 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun startStt() {
+        // 권한이 기기에 정의돼 있지 않으면(일반 폰 에뮬레이터 등) 예외 → 그냥 진행해서 오류 메시지를 확인
+        val dangerous = runCatching {
+            packageManager.getPermissionInfo(STT_PERMISSION, 0).protection ==
+                android.content.pm.PermissionInfo.PROTECTION_DANGEROUS
+        }.getOrDefault(false)
+        if (dangerous && checkSelfPermission(STT_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
+            sttStatus.text = "STT 권한을 허용해주세요."
+            requestPermissions(arrayOf(STT_PERMISSION), 101)
+            return
+        }
+        val probe = sttProbe
+        if (probe == null) {
+            // 첫 클릭: 초기화만. "준비됨"이 뜬 뒤 다시 누르면 인식 시작
+            sttProbe = SttProbe(this) { sttStatus.text = it }.also { it.start() }
+        } else probe.request()
+    }
+
     private fun update(token: Int, action: () -> Unit) {
         handler.post { if (active && session == token && !isDestroyed) action() }
     }
@@ -307,8 +337,16 @@ class MainActivity : Activity() {
             if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) connectSpeed(session)
             else speedStatus.text = "속도 권한이 없어 측정값을 표시할 수 없습니다."
         }
+        if (code == 101) {
+            if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) startStt()
+            else sttStatus.text = "STT 권한이 거부되었습니다."
+        }
     }
-    override fun onStop() { active = false; stopSources(); super.onStop() }
+    override fun onStop() {
+        active = false; stopSources()
+        sttProbe?.release(); sttProbe = null
+        super.onStop()
+    }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("demo", demo); super.onSaveInstanceState(outState)
     }
@@ -322,5 +360,8 @@ class MainActivity : Activity() {
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private data class Place(val name: String, val latitude: Double, val longitude: Double)
-    companion object { private const val SPEED_PERMISSION = "android.car.permission.CAR_SPEED" }
+    companion object {
+        private const val SPEED_PERMISSION = "android.car.permission.CAR_SPEED"
+        private const val STT_PERMISSION = "pleos.car.permission.STT_SERVICE"
+    }
 }
