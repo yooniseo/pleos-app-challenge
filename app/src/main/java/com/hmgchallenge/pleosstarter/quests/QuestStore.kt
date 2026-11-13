@@ -7,9 +7,13 @@ import org.json.JSONObject
 
 /** v1 prototype files are preserved; their milestone meaning is not silently reused as quest stages. */
 class QuestStore(context: Context, private val demo: Boolean) {
+    private val repository=com.hmgchallenge.pleosstarter.core.data.SharedCoachRepository.get(context)
+    private val profile=if(demo)"demo" else "personal"
     private val preferences = context.getSharedPreferences(if (demo) "tutorial_quest_demo_v2" else "tutorial_quest_personal_v2", Context.MODE_PRIVATE)
     fun load(): QuestState {
-        val raw = preferences.getString("state", null) ?: return QuestState(demo = demo)
+        val raw = repository.snapshot("quest:$profile") ?: preferences.getString("state",null)?.also {
+            check(repository.saveQuest(profile,it)) {"기존 퀘스트 기록을 DB로 옮기지 못했습니다"}
+        } ?: return QuestState(demo = demo)
         val root = JSONObject(raw)
         require(root.getInt("version") == 2 && root.getBoolean("demo") == demo)
         val options = root.getJSONObject("settings")
@@ -62,7 +66,7 @@ class QuestStore(context: Context, private val demo: Boolean) {
                     .put("abruptAccelerationCount", it.abruptAccelerationCount).put("abruptBrakingCount", it.abruptBrakingCount)
             }))
         state.session?.let { root.put("session", encodeSession(it)) }
-        return preferences.edit().putString("state", root.toString()).commit()
+        return repository.saveQuest(profile,root.toString())
     }
     private fun contextJson(ctx: SituationContext) = JSONObject().put("tripId", ctx.tripId).put("occurrenceId", ctx.occurrenceId)
         .put("maneuverId", ctx.maneuverId).put("kind", ctx.kind.name).put("source", ctx.source.name).put("at", ctx.at)
@@ -94,12 +98,11 @@ class QuestStore(context: Context, private val demo: Boolean) {
     private fun JSONObject.optionalLong(key: String) = if (has(key) && !isNull(key)) getLong(key) else null
 
     fun observe(onState: (QuestState) -> Unit, onError: (Exception) -> Unit): java.io.Closeable {
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "state") try { onState(load()) } catch (error: Exception) { onError(error) }
+        val subscription=repository.observe {key->
+            if (key == "quest:$profile") try { onState(load()) } catch (error: Exception) { onError(error) }
         }
-        preferences.registerOnSharedPreferenceChangeListener(listener)
         try { onState(load()) } catch (error: Exception) { onError(error) }
-        return java.io.Closeable { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+        return subscription
     }
 }
 

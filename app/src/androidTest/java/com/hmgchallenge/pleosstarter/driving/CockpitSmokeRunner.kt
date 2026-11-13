@@ -17,7 +17,8 @@ open class CockpitSmokeRunner : Instrumentation() {
     private var automaticProbe=false
     private var navigationProbe=false
     private var interactionProbe=false
-    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);automaticProbe=arguments?.getString("auto_probe")=="1";navigationProbe=arguments?.getString("navigation_probe")=="1";interactionProbe=arguments?.getString("interaction_probe")=="1"}
+    private var fastNavigationProbe=false
+    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);automaticProbe=arguments?.getString("auto_probe")=="1";navigationProbe=arguments?.getString("navigation_probe")=="1";interactionProbe=arguments?.getString("interaction_probe")=="1";fastNavigationProbe=arguments?.getString("fast_navigation")=="1"}
     override fun runOnMainSync(runner: Runnable) {
         // Keep test assertion failures on the instrumentation thread so finally restores user data.
         var failure: Throwable?=null
@@ -26,6 +27,17 @@ open class CockpitSmokeRunner : Instrumentation() {
     }
     override fun onStart() {
         val result=Bundle();var a: DrivingSimulatorActivity?=null;var launcher: Activity?=null;var code=Activity.RESULT_OK
+        val watching=java.util.concurrent.atomic.AtomicBoolean(true)
+        Thread {
+            val main=android.os.Handler(android.os.Looper.getMainLooper())
+            while(watching.get()) {
+                val beat=java.util.concurrent.CountDownLatch(1);main.post {beat.countDown()}
+                if(!beat.await(2,java.util.concurrent.TimeUnit.SECONDS))File(targetContext.filesDir,"cockpit-ui-stall.txt")
+                    .writeText(android.os.Looper.getMainLooper().thread.stackTrace.joinToString("\n"))
+                Thread.sleep(350)
+            }
+        }.apply {isDaemon=true;name="cockpit-test-watchdog";start()}
+        val isolated=IsolatedCoachDatabase(targetContext)
         val demo=QuestStore(targetContext,true);val before=demo.load();val personal=QuestStore(targetContext,false).load()
         val simulatorPrefs=targetContext.getSharedPreferences("driver_simulator",0)
         val priorReport=simulatorPrefs.getString("last_report",null)
@@ -142,7 +154,7 @@ open class CockpitSmokeRunner : Instrumentation() {
             check(after.getJSONObject("gear").getJSONObject("actual").getString("value")=="Park")
             check(after.getJSONObject("lights").getString("turn_signal_mode")=="Off")
             check(QuestStore(targetContext,false).load()==personal)
-            check(simulatorPrefs.getString("last_report","")!!.contains("기억한 순간")) {"Coach note was not linked to feedback"}
+            check(isolated.repository.snapshot("last-report").orEmpty().contains("기억한 순간")) {"Coach note was not linked to feedback"}
             val proof=JSONObject().apply {
                 put("result","PASS_COCKPIT_CONTROLS");put("launchPath","COACH_ENTRY");put("taskRoot",taskRoot)
                 put("coachAndControlsVisible",true);put("coachInteractionKeptSimulationRunning",true)
@@ -151,7 +163,7 @@ open class CockpitSmokeRunner : Instrumentation() {
             File(targetContext.filesDir,"cockpit-proof.json").writeText(proof.toString(2))
             result.putString("result","PASS_COCKPIT_CONTROLS")
             }
-        } catch(error: Throwable) {code=Activity.RESULT_CANCELED;result.putString("result","FAIL: ${error.stackTraceToString()}")}
+        } catch(error: Throwable) {code=Activity.RESULT_CANCELED;File(targetContext.filesDir,"cockpit-last-failure.txt").writeText(error.stackTraceToString());result.putString("result","FAIL: ${error.stackTraceToString()}")}
         finally {
             a?.let {runOnMainSync {it.finish()}};launcher?.let {runOnMainSync {it.finish()}}
             Thread.sleep(3_000);demo.save(before)
@@ -159,6 +171,8 @@ open class CockpitSmokeRunner : Instrumentation() {
             simulatorPrefs.edit().apply {if(priorReport==null)remove("last_report")else putString("last_report",priorReport)}.commit()
             profilePrefs.edit().apply {if(priorStyle==null)remove("style")else putString("style",priorStyle)
                 if(hadCelebration)putBoolean("celebration",priorCelebration)else remove("celebration")}.commit()
+            isolated.close()
+            watching.set(false)
         }
         finish(code,result)
     }
@@ -207,6 +221,7 @@ open class CockpitSmokeRunner : Instrumentation() {
         do {
             var d=0.0;var laneDone=false;var turning=false;var data=emptyMap<String,String>()
             runOnMainSync {
+                if(fastNavigationProbe && !a.pausedForDiagnostics())a.simpleForDiagnostics()!!.advance(1000,null,false)
                 val s=checkNotNull(a.simpleForDiagnostics());d=s.distance;done=s.complete;laneDone=s.laneDone;turning=s.turning
                 data=a.navigationForDiagnostics()
                 maxSteering=maxOf(maxSteering,kotlin.math.abs(s.steeringTarget))
@@ -236,7 +251,8 @@ open class CockpitSmokeRunner : Instrumentation() {
         Thread.sleep(1800)
         var ambient=emptyList<ApiObservation>();var sounds=0
         runOnMainSync {ambient=a.celebrationForDiagnostics();sounds=a.celebrationSoundStarts()}
-        check(sounds==2) {"Expected two celebration melodies: $sounds"}
+        // Quest celebration now waits until the virtual drive ends; no large lane-change reward.
+        check(sounds==1) {"Expected one end-of-drive celebration melody: $sounds"}
         check(ambient.any {it.kind=="PULSE_VALUE" && it.values["argb"]?.toIntOrNull()?.and(0x00FFFFFF)==0x65E9C5}) {"Ambient response not confirmed: $ambient"}
         check(ambient.count {it.kind=="PULSE_SET"}==ambient.count {it.kind=="RESTORED"}) {"Ambient colour not restored"}
         var completeData=emptyMap<String,String>();runOnMainSync {completeData=a.navigationForDiagnostics()}
@@ -259,10 +275,20 @@ open class CockpitSmokeRunner : Instrumentation() {
                 if(actual<5)Thread.sleep(150)
             }while(actual<5 && android.os.SystemClock.elapsedRealtime()<speedDeadline)
             check(kotlin.math.abs(actual-20f/3.6f)<.1f) {"Actual SDK speed not received: $actual"}
-            click(a,"nav_auto");val start=android.os.SystemClock.elapsedRealtime()
+            var start=0L;var initialDistance=0.0
+            runOnMainSync {
+                initialDistance=checkNotNull(a.simpleForDiagnostics()).distance
+                start=android.os.SystemClock.elapsedRealtime()
+                check(a.window.decorView.findViewWithTag<Button>("nav_auto").performClick())
+            }
+            waitForIdleSync()
             repeat(8){console("POST","/browser/session?client=scenario-speed-probe");Thread.sleep(500)}
-            click(a,"nav_pause");sdkElapsed=android.os.SystemClock.elapsedRealtime()-start
-            runOnMainSync {sdkDistance=checkNotNull(a.simpleForDiagnostics()).distance}
+            runOnMainSync {
+                sdkElapsed=android.os.SystemClock.elapsedRealtime()-start
+                check(a.window.decorView.findViewWithTag<Button>("nav_pause").performClick())
+                sdkDistance=checkNotNull(a.simpleForDiagnostics()).distance-initialDistance
+            }
+            waitForIdleSync()
             check(kotlin.math.abs(sdkDistance-actual*sdkElapsed/1000)<1.5) {"Speed/distance mismatch: $sdkDistance m / $sdkElapsed ms / $actual mps"}
             check(consoleState().getJSONObject("controls").getInt("speed_kph")==20) {"App overwrote external console speed"}
             capture("simple-navigation-sdk-speed.png")
@@ -285,6 +311,7 @@ open class CockpitSmokeRunner : Instrumentation() {
         do {
             var reversing=false
             runOnMainSync {
+                if(fastNavigationProbe)a.simpleForDiagnostics()!!.advance(1000,null,false)
                 val s=checkNotNull(a.simpleForDiagnostics());parked=s.complete;reversing=s.parkingGear=="R" && s.speedMps>0
                 check(s.source==ScenarioSpeed.REPLAY && s.lesson==RoadLesson.PARKING)
                 check(a.navigationForDiagnostics()["coachStyle"]=="VISUAL")
@@ -298,6 +325,7 @@ open class CockpitSmokeRunner : Instrumentation() {
         check(finalState.session!!.situations.single().context.kind==com.hmgchallenge.pleosstarter.quests.SituationKind.PARKING)
         capture("parking-complete.png");Thread.sleep(1800)
         return JSONObject().apply {
+            put("replayUsesVirtualTime",fastNavigationProbe);put("sdkSpeedUsesRealTime",true)
             put("complete",true);put("states",org.json.JSONArray(states));put("completeState",JSONObject(completeData))
             put("questEvidenceAdded",after.evidence.size-before);put("pauseFreezesMap",true);put("replayVehicleSpeedMps",maxSdk)
             put("actualSdkSpeedMps",actual);put("sdkDistanceMetres",sdkDistance);put("sdkElapsedMs",sdkElapsed)

@@ -17,7 +17,7 @@ data class Trip(
     val distanceKm: Float?                // 속도 적분으로 계산
 )
 
-enum class TripSource { VEHICLE, REPLAY }
+enum class TripSource { VEHICLE, REPLAY, USER }
 
 @Entity(primaryKeys = ["tripId", "t"])
 data class TripSample(
@@ -35,7 +35,7 @@ data class DrivingNote(
     val category: String                  // NoteCategory 이름
 )
 
-enum class NoteCategory { LEFT_TURN, RIGHT_TURN, U_TURN, LANE_CHANGE, PARKING, SPEED_CONTROL, OTHER }
+enum class NoteCategory { LEFT_TURN, RIGHT_TURN, U_TURN, LANE_CHANGE, PARKING, SPEED_CONTROL, OTHER, STEERING }
 
 // ── B가 저장 ──────────────────────────────────────────
 

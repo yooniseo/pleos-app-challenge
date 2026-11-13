@@ -17,6 +17,9 @@ import com.hmgchallenge.pleosstarter.quests.QuestEngine
 import com.hmgchallenge.pleosstarter.quests.QuestIntegration
 import com.hmgchallenge.pleosstarter.quests.QuestStore
 import java.util.UUID
+import com.hmgchallenge.pleosstarter.core.data.SharedCoachRepository
+import org.json.JSONObject
+import org.json.JSONArray
 import com.hmgchallenge.pleosstarter.SpeedSource
 import kotlin.math.*
 
@@ -27,6 +30,8 @@ class DrivingSimulatorActivity : Activity() {
     private var bridge: EmulatorCockpitBridge?=null
     private var voice: PleosCoachVoice?=null
     private var active=false
+    private var screenVisible=false
+    private var pendingCelebration=false
     private var paused=false
     private var pauseReason=""
     private var automatic=false
@@ -75,13 +80,21 @@ class DrivingSimulatorActivity : Activity() {
     private var simpleQuestKey=""
     private var questSaved=true
     private var simpleLastCue=""
-    private var beginnerStyle=BeginnerStyle.STEP_BY_STEP
+    private var beginnerStyle=BeginnerStyle.ADAPTIVE
     private var celebrationEnabled=true
     private var celebration: ScenarioCelebration?=null
     private var celebrationVoiceAfter=0L
     private var simpleLastSpokenAt=0L
     private var steeringFollow: SteeringFollowPractice?=null
     private var pausedBeforeFollow=false
+    private val database by lazy {SharedCoachRepository.get(this)}
+    private var recordingId: String?=null
+    private var lastRecordingId: String?=null
+    private var lastSampleAt=0L
+    private var lastPlanKey=""
+    private var memoDialog: DrivingMemoDialog?=null
+    private var questState=com.hmgchallenge.pleosstarter.quests.QuestState()
+    private var questObserver: java.io.Closeable?=null
     private var sdkSignal=Indicator.UNKNOWN
     private var bridgeStatus="에뮬레이터 연결 확인 중"
     private var voiceStatus="Pleos 음성 연결 중"
@@ -93,13 +106,21 @@ class DrivingSimulatorActivity : Activity() {
         }
         window.statusBarColor=Color.rgb(13,25,34);window.navigationBarColor=Color.rgb(13,25,34)
         voiceEnabled=CoachRepository(this).preferences().voiceEnabled
+        val questStore=QuestStore(this,true)
+        questState=questStore.load()
+        questObserver=questStore.observe({questState=it;render()},{questSaved=false})
         val preferences=getSharedPreferences("scenario_coach",MODE_PRIVATE)
-        beginnerStyle=runCatching {BeginnerStyle.valueOf(preferences.getString("style","STEP_BY_STEP")!!)}.getOrDefault(BeginnerStyle.STEP_BY_STEP)
-        celebrationEnabled=preferences.getBoolean("celebration",true)
+        val settings=JSONObject(database.snapshot("settings:scenario") {JSONObject().put("style",preferences.getString("style","ADAPTIVE")).put("celebration",preferences.getBoolean("celebration",true)).toString()}!!)
+        beginnerStyle=runCatching {BeginnerStyle.valueOf(settings.optString("style","ADAPTIVE"))}.getOrDefault(BeginnerStyle.ADAPTIVE)
+        celebrationEnabled=settings.optBoolean("celebration",true)
         build()
     }
     override fun onStart() {
-        super.onStart();if(!::root.isInitialized)return;active=true
+        super.onStart();AppNavigation.own(this);resumeInternalSession()
+    }
+    fun resumeInternalSession() {
+        if(active || isFinishing || isDestroyed || !::root.isInitialized)return
+        active=true
         if(simple?.source!=ScenarioSpeed.VEHICLE)startBridge() else speedReaderReady=true
         lastTick=android.os.SystemClock.elapsedRealtime()
         celebration=ScenarioCelebration(this,{active && sdkSpeed?.let {it.isFinite() && abs(it)<.1f}==true && android.os.SystemClock.elapsedRealtime()-sdkSpeedAt<=5000},
@@ -107,7 +128,7 @@ class DrivingSimulatorActivity : Activity() {
         if(packageManager.hasSystemFeature("android.hardware.type.automotive")) {
             voice=PleosCoachVoice(this,{message->
                 voiceStatus=message
-                if(active && !paused && voiceEnabled && message=="Pleos ON_DEVICE 음성 준비됨")voice?.speak(simple?.cue() ?: model.instruction())
+                if(active && screenVisible && !paused && voiceEnabled && (simple==null || learningDecision().automaticSpeech) && message=="Pleos ON_DEVICE 음성 준비됨")voice?.speak(simple?.cue() ?: model.instruction())
             }).also {it.start()}
             sdkSource=PleosCoachSource(this,object : PleosCoachSource.Listener {
                 override fun onNavigation(right: Boolean,meters: Double?,description: String) {}
@@ -130,10 +151,13 @@ class DrivingSimulatorActivity : Activity() {
             if(scenario!=null) {
                 if(steeringFollow?.check(now)==true) {
                     celebration?.ding(celebrationEnabled);navigation.celebrationMessage="띵동! 핸들 따라하기 완료"
-                    navigation.celebrationUntil=now+1800;coachNotes.add("핸들 따라하기 · 직접 조작 일치")
+                    navigation.celebrationUntil=now+1800
+                    saveMemo("핸들 따라하기 · 직접 조작 일치","STEERING",false)
                 }
                 if(!paused && steeringFollow==null)scenario.advance(elapsed,sdkSpeed?.toDouble(),speedReaderReady && now-sdkSpeedAt<=5_000)
-                syncSimpleQuests();render()
+                recordSample(now);syncSimpleQuests()
+                if(scenario.complete)finishRecording(true)
+                render()
                 bridge?.update(EmulatorCockpitBridge.Controls(SimGear.P,SimSignal.OFF,0,0,0,0,0,0,true))
                 handler.postDelayed(this,50);return
             }
@@ -142,7 +166,10 @@ class DrivingSimulatorActivity : Activity() {
                 model.tick(0.05)
                 if(automatic && model.stage==SimStage.COMPLETE) {automatic=false;model.freeze()}
             }
-            saveNewPractice();render()
+            if(model.stage!=SimStage.PREPARE && recordingId==null && model.stage!=SimStage.COMPLETE)startRecording(tripId,if(model.turnRight)"LEGACY_RIGHT" else "LEGACY_LEFT","REPLAY")
+            recordSample(now);saveNewPractice()
+            if(model.stage==SimStage.COMPLETE)finishRecording(true)
+            render()
             bridge?.update(EmulatorCockpitBridge.Controls(model.gear,model.signal,model.steering.roundToInt(),
                 model.accelerator.roundToInt(),model.brake.roundToInt(),(model.speed*3.6).roundToInt(),model.windowOpen,model.wiper,
                 automatic || navigation.visibility==View.VISIBLE))
@@ -159,14 +186,16 @@ class DrivingSimulatorActivity : Activity() {
         if(simpleEnabled && simple==null)simple=SimpleRoadScenario(navigation.course)
         layers.addView(navigation,FrameLayout.LayoutParams(-1,-1))
         root.visibility=View.GONE
-        setContentView(layers)
+        AppNavigation.content(this,layers,"drive")
         navigation.onAutomatic={
             if(steeringFollow!=null)toggleSteeringFollow()
             if(simple!=null) {
                 if(simple!!.complete)newSimple(simple!!.lesson,simple!!.source)
                 simple!!.start();paused=false;lastTick=android.os.SystemClock.elapsedRealtime()
                 val at=System.currentTimeMillis()
-                simpleQuests=SimpleScenarioQuests(UUID.randomUUID().toString(),at)
+                val id=UUID.randomUUID().toString()
+                startRecording(id,simple!!.lesson.name,simple!!.source.name)
+                simpleQuests=SimpleScenarioQuests(id,at)
                 synchronized(QuestIntegration.lock) {
                     val store=QuestStore(this,true);questSaved=store.save(simpleQuests!!.begin(store.load(),at))
                 }
@@ -176,25 +205,26 @@ class DrivingSimulatorActivity : Activity() {
             render()
         }
         navigation.onPausePlayback={if(steeringFollow!=null)toggleSteeringFollow()else pauseButton.performClick()}
-        navigation.onControls={steeringFollow=null;closeSimpleQuest();simple=null;simpleEnabled=false;startBridge();navigation.visibility=View.GONE;root.visibility=View.VISIBLE;render()}
+        navigation.onControls={steeringFollow=null;finishRecording(false);closeSimpleQuest();lastRecordingId=null;coachNotes.clear();simple=null;simpleEnabled=false;model=DrivingSimulator();tripId=UUID.randomUUID().toString();recorded.clear();startBridge();navigation.visibility=View.GONE;root.visibility=View.VISIBLE;render()}
         navigation.onVoice={coachVoiceButton.performClick()}
         navigation.onNote={
             val s=simple
-            if(s!=null){coachNotes.add("${s.distance.roundToInt()}m · ${s.cue()}");toast("주행 피드백에 기록했어요")}
+            if(s!=null)showMemoOptions()
             else root.findViewWithTag<Button>("sim_coach_note").performClick()
         }
         navigation.onFeedback={showFeedback()}
         navigation.onRestart={if(simple!=null)newSimple(simple!!.lesson,simple!!.source)else {reset(true,true);model.startRoadPractice();render()}}
-        navigation.onQuests={startActivity(Intent(this,com.hmgchallenge.pleosstarter.quests.QuestActivity::class.java).putExtra("quest_demo",true))}
+        navigation.onQuests={AppNavigation.quests(this)}
         navigation.onScenario={chooseSimpleScenario()}
         navigation.onSpeedMode={chooseSpeedSource()}
         navigation.onProfile={chooseBeginnerProfile()}
         navigation.onSteeringPractice={toggleSteeringFollow()}
         navigation.onSteeringInput={angle->steeringFollow?.input(angle,android.os.SystemClock.elapsedRealtime());render()}
+        navigation.onHelp={showMoreHelp()}
         text(root,"주행 코치와 함께 운전해요",23f,mint)
         text(root,"시뮬레이션 · 왼쪽 안내를 보며 오른쪽에서 조작해요. 핸들 각도는 가상 차량·도로 기준입니다.",12f,muted)
         val header=row(root)
-        button(header,"지도 보기","sim_navigation") {
+        button(header,"← 지도로 돌아가기","sim_navigation") {
             if(!model.turnRight){reset(true,true);model.startRoadPractice()}
             simpleEnabled=true;newSimple(RoadLesson.COMBINED,ScenarioSpeed.REPLAY)
             root.visibility=View.GONE;navigation.visibility=View.VISIBLE;render()
@@ -206,7 +236,7 @@ class DrivingSimulatorActivity : Activity() {
             if(automatic) {
                 automatic=false;paused=true;pauseReason="자동 시연을 멈췄어요. ‘계속하기’로 수동 운전을 이어갈 수 있어요.";model.freeze();voice?.stop();render()
             } else {
-                if(model.practices.isNotEmpty() || coachNotes.isNotEmpty())getSharedPreferences("driver_simulator",MODE_PRIVATE).edit().putString("last_report",reportText()).apply()
+                if(model.practices.isNotEmpty() || coachNotes.isNotEmpty())database.saveSnapshot("last-report",reportText())
                 val rainy=model.rain
                 reset(model.turnRight,model.laneRight);model.rain=rainy;autoDriver=TrainingAutoDriver();automatic=true;render()
                 if(voiceEnabled)voice?.speak("가상 시나리오를 처음부터 자동으로 시연할게요. 직접 조작하면 수동으로 바뀌어요.")
@@ -253,8 +283,7 @@ class DrivingSimulatorActivity : Activity() {
         }
         button(coachActions,"이 순간 기억","sim_coach_note") {
             val stamp=java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.KOREA).format(java.util.Date())
-            if(coachNotes.size<100)coachNotes.add("$stamp · ${model.stage.title} · ${model.instruction()}")
-            toast("주행 피드백에 이 순간을 기록했어요");render()
+            saveMemo("$stamp · ${model.stage.title} · ${model.instruction()}","OTHER",false);render()
         }
         coachVoiceView=text(coach,"",12f,muted)
         text(coach,"자동 시연은 처음부터 안내대로 가상 조작을 재생해요. 신호·주변 확인도 가상 입력이며 개인 실주행 기록과 구분해요.",12f,muted)
@@ -320,17 +349,24 @@ class DrivingSimulatorActivity : Activity() {
     private fun render() {
         if(!::wheel.isInitialized)return
         simple?.let {s->
-            navigation.coachStyle=beginnerStyle
+            val decision=learningDecision()
+            navigation.coachStyle=decision.style
+            navigation.profileLabel=if(beginnerStyle==BeginnerStyle.ADAPTIVE)"맞춤 · ${decision.label}" else beginnerStyle.title
+            navigation.learningLabel=decision.reason
+            val planKey="${currentSkill()}:${decision.support}:${decision.reason}"
+            recordingId?.let {id->if(planKey!=lastPlanKey) {
+                lastPlanKey=planKey;database.recordEvent("$id:plan:$planKey",id,"COACHING_PLAN","SIMULATION",JSONObject().put("skill",currentSkill()).put("support",decision.support.name).put("reason",decision.reason).toString(),System.currentTimeMillis())
+            }}
             navigation.steeringPractice=steeringFollow
             val received=sdkSpeed?.toDouble()?.takeIf {it.isFinite() && it>=0 && speedReaderReady && android.os.SystemClock.elapsedRealtime()-sdkSpeedAt<=5000}
             navigation.renderSimple(s,paused,voiceEnabled,questSaved,received)
-            val guide=BeginnerScenarioCoach.guidance(s,beginnerStyle)
-            val cue=(guide.headline+if(beginnerStyle==BeginnerStyle.STEP_BY_STEP)"。${guide.detail}" else "")
+            val guide=BeginnerScenarioCoach.guidance(s,decision.style)
+            val cue=(guide.headline+if(decision.style==BeginnerStyle.STEP_BY_STEP)"。${guide.detail}" else "")
                 .replace("1/4 바퀴","4분의 1바퀴").replace("3/4 바퀴","4분의 3바퀴")
             val now=android.os.SystemClock.elapsedRealtime()
-            if(active && !paused && cue!=simpleLastCue && now>=celebrationVoiceAfter && (s.complete || now-simpleLastSpokenAt>=3500)) {
+            if(active && screenVisible && !paused && cue!=simpleLastCue && now>=celebrationVoiceAfter && (s.complete || now-simpleLastSpokenAt>=3500)) {
                 simpleLastCue=cue
-                if(voiceEnabled){voice?.speak(cue);simpleLastSpokenAt=now}
+                if(voiceEnabled && (decision.automaticSpeech || s.complete || s.waitingForSpeed)){voice?.speak(cue);simpleLastSpokenAt=now}
             }
             return
         }
@@ -371,9 +407,9 @@ class DrivingSimulatorActivity : Activity() {
         coachVoiceButton.text=if(voiceEnabled)"음성 끄기" else "음성 켜기"
         coachVoiceView.text="코치 음성 ${if(voiceEnabled)"ON" else "OFF"} · $voiceStatus\n기억한 순간 ${coachNotes.size}개 · 피드백에서 돌아볼 수 있어요"
         linkView.text="$bridgeStatus\nSDK 관측 · 속도 ${sdkSpeed?.let {"%.1f km/h".format(java.util.Locale.US,it*3.6)} ?: "응답 대기"} · 깜빡이 ${sdkSignal.name}"
-        if(model.feedback!=lastFeedback && model.feedback.startsWith("좋아요")) {lastFeedback=model.feedback;if(voiceEnabled && !paused)voice?.speak(model.feedback)}
+        if(model.feedback!=lastFeedback && model.feedback.startsWith("좋아요")) {lastFeedback=model.feedback;if(screenVisible && voiceEnabled && !paused)voice?.speak(model.feedback)}
         if(model.stage!=lastStage || (cue!=lastCue && (cue.contains("깜빡이") || model.stage==SimStage.PREPARE || model.stage==SimStage.TURN_CHECK))) {
-            lastStage=model.stage;lastCue=cue;if(active && voiceEnabled && !paused)voice?.speak(cue)
+            lastStage=model.stage;lastCue=cue;if(active && screenVisible && voiceEnabled && !paused)voice?.speak(cue)
         }
     }
     private fun resumeTraining() {
@@ -398,6 +434,8 @@ class DrivingSimulatorActivity : Activity() {
         simpleQuests=null
     }
     private fun newSimple(lesson: RoadLesson,source: ScenarioSpeed) {
+        finishRecording(simple?.complete==true)
+        lastRecordingId=null
         steeringFollow=null
         closeSimpleQuest();simpleEnabled=true
         simple=SimpleRoadScenario(navigation.course,lesson,if(lesson==RoadLesson.PARKING)ScenarioSpeed.REPLAY else source)
@@ -422,7 +460,13 @@ class DrivingSimulatorActivity : Activity() {
         if(key==simpleQuestKey)return
         var newlyCompleted=false
         synchronized(QuestIntegration.lock) {
-            val store=QuestStore(this,true);val before=store.load();val next=link.sync(before,s,System.currentTimeMillis())
+            val store=QuestStore(this,true);val before=store.load();val next=link.sync(before,s,System.currentTimeMillis()) {skill->
+                when(learningDecision(skill.name).support) {
+                    CoachingSupport.DETAILED->com.hmgchallenge.pleosstarter.quests.AssistanceUsed.DETAILED
+                    CoachingSupport.HINT->com.hmgchallenge.pleosstarter.quests.AssistanceUsed.BRIEF
+                    CoachingSupport.ON_REQUEST->com.hmgchallenge.pleosstarter.quests.AssistanceUsed.NONE
+                }
+            }
             questSaved=next==before || store.save(next)
             newlyCompleted=questSaved && next.evidence.size>before.evidence.size
             if(questSaved)simpleQuestKey=key
@@ -431,7 +475,8 @@ class DrivingSimulatorActivity : Activity() {
             val message=if(s.lesson==RoadLesson.PARKING)"좋아요! 후진 주차 완료" else if(s.complete)"좋아요! 주행 퀘스트 완료" else "좋아요! 한 차로 이동 완료"
             navigation.celebrationMessage=message;navigation.celebrationUntil=android.os.SystemClock.elapsedRealtime()+2500
             celebrationVoiceAfter=android.os.SystemClock.elapsedRealtime()+600
-            celebration?.celebrate(celebrationEnabled);toast(message)
+            // Large quest celebration waits for the end of the virtual drive as well as real P/0.
+            if(s.complete){if(screenVisible){celebration?.celebrate(celebrationEnabled);toast(message)}else pendingCelebration=true}
         }
     }
     private fun chooseSimpleScenario() {
@@ -461,9 +506,9 @@ class DrivingSimulatorActivity : Activity() {
     private fun chooseBeginnerProfile() {
         val wasPaused=paused;paused=true;voice?.stop();render()
         AlertDialog.Builder(this).setTitle("나에게 맞는 코치")
-            .setItems(arrayOf("차근차근 · 확인 순서와 이유까지","핸들 중심 · 방향·회전량·복원 시점","짧게 · 지금 필요한 행동만",if(celebrationEnabled)"축하음·조명 끄기" else "축하음·조명 켜기")) {_,which->
-                if(which<3)beginnerStyle=BeginnerStyle.values()[which] else celebrationEnabled=!celebrationEnabled
-                getSharedPreferences("scenario_coach",MODE_PRIVATE).edit().putString("style",beginnerStyle.name).putBoolean("celebration",celebrationEnabled).apply()
+            .setItems(arrayOf("맞춤 · 연습 기록에 맞춰 도움 줄이기","차근차근 · 확인 순서와 이유까지","핸들 중심 · 방향·회전량·복원 시점","짧게 · 지금 필요한 행동만",if(celebrationEnabled)"축하음·조명 끄기" else "축하음·조명 켜기")) {_,which->
+                if(which<4)beginnerStyle=listOf(BeginnerStyle.ADAPTIVE,BeginnerStyle.STEP_BY_STEP,BeginnerStyle.VISUAL,BeginnerStyle.BRIEF)[which] else celebrationEnabled=!celebrationEnabled
+                database.saveSnapshot("settings:scenario",JSONObject().put("style",beginnerStyle.name).put("celebration",celebrationEnabled).toString())
                 simpleLastCue="";paused=wasPaused;render()
             }.setNegativeButton("닫기") {_,_->paused=wasPaused;render()}.setOnCancelListener {paused=wasPaused;render()}.show()
     }
@@ -480,6 +525,117 @@ class DrivingSimulatorActivity : Activity() {
             }
         }
     }
+    private fun currentSkill(): String=when(simple?.lesson) {
+        RoadLesson.PARKING->"PARKING"
+        RoadLesson.TURN->"INTERSECTION"
+        RoadLesson.LANE->"LANE_CHANGE"
+        else->if(simple?.laneDone==true)"INTERSECTION" else "LANE_CHANGE"
+    }
+    private fun learningDecision(skill: String=currentSkill()): LearningDecision {
+        val records=database.completions("demo",skill)
+        val category=CoachSkill.valueOf(skill)
+        val difficultAt=database.difficultyAt("demo",skill)
+        return CoachLearningPolicy.forQuest(questState,category,records.count {it.at>difficultAt && !it.difficult},difficultAt>0,beginnerStyle)
+    }
+    private fun startRecording(id: String,lesson: String,source: String) {
+        if(recordingId==id)return
+        if(recordingId!=null)finishRecording(false)
+        if(database.beginTrip(id,lesson,source,System.currentTimeMillis())) {
+            recordingId=id;lastRecordingId=id;lastSampleAt=0;lastPlanKey=""
+        } else {questSaved=false;toast("주행 DB를 시작하지 못했어요")}
+    }
+    private fun recordSample(now: Long) {
+        val id=recordingId ?: return
+        if(lastSampleAt!=0L && now-lastSampleAt<1000)return
+        lastSampleAt=now
+        val s=simple
+        val speed=if(s?.source==ScenarioSpeed.VEHICLE) sdkSpeed?.takeIf {speedReaderReady && now-sdkSpeedAt<=5000 && it.isFinite()}?.let {abs(it)*3.6f}
+            else if(paused)0f else ((s?.speedMps ?: model.speed)*3.6).toFloat()
+        val metres=s?.let {it.distance-it.startDistance} ?: model.distance
+        database.sample(id,System.currentTimeMillis(),speed,(metres/1000).toFloat())
+    }
+    private fun finishRecording(complete: Boolean) {
+        val id=recordingId ?: return
+        val metres=simple?.let {it.distance-it.startDistance} ?: model.distance
+        if(database.endTrip(id,System.currentTimeMillis(),(metres/1000).toFloat(),complete)) {
+            lastRecordingId=id;recordingId=null
+        } else questSaved=false
+    }
+    private fun categoryForSkill()=when(currentSkill()) {"LANE_CHANGE"->"LANE_CHANGE";"INTERSECTION"->"RIGHT_TURN";"PARKING"->"PARKING";else->"OTHER"}
+    private fun saveMemo(text: String,category: String,difficult: Boolean): Boolean {
+        if(recordingId==null && lastRecordingId==null)startRecording(UUID.randomUUID().toString(),simple?.lesson?.name ?: "LEGACY","REPLAY")
+        val id=recordingId ?: lastRecordingId ?: return false
+        val skill=when(category) {"LANE_CHANGE"->"LANE_CHANGE";"RIGHT_TURN","LEFT_TURN"->"INTERSECTION";"PARKING"->"PARKING";"SPEED_CONTROL"->"SPEED";else->currentSkill()}
+        val value=if(difficult)"어려웠어요 · $text" else text
+        val context=JSONObject().put("skill",skill).put("category",category).put("simulated",true)
+        simple?.let {s->
+            val frame=s.frame()
+            context.put("lesson",s.lesson.name).put("metres",s.distance-s.startDistance)
+                .put("latitude",frame.position.latitude).put("longitude",frame.position.longitude)
+                .put("cue",BeginnerScenarioCoach.guidance(s,learningDecision().style).headline)
+        } ?: context.put("stage",model.stage.name).put("metres",model.distance).put("cue",model.instruction())
+        val success=database.addNote(id,value,category,skill,difficult,contextJson=context.toString())
+        if(success){
+            if(difficult) {
+                val integration=QuestIntegration(this,true)
+                integration.snapshot().session?.current?.context?.takeIf {it.tripId==id && it.kind.skill.name==skill}?.let {
+                    integration.recordDifficulty(UUID.randomUUID().toString(),it,System.currentTimeMillis(),text)
+                }
+            }
+            if(coachNotes.size<100)coachNotes.add(value);lastPlanKey="";toast(if(difficult)"다음에도 이 상황은 차근차근 도와드릴게요" else "같은 주행 기록에 저장했어요")
+        }
+        return success
+    }
+    private fun showMemoOptions() {
+        val wasPaused=paused;paused=true;voice?.stop();render()
+        val skillLabel=when(currentSkill()) {"LANE_CHANGE"->"차로 변경";"INTERSECTION"->"우회전";"PARKING"->"주차";else->"이번 상황"}
+        AlertDialog.Builder(this).setTitle("기억할 순간")
+            .setItems(arrayOf("이 상황이 어려웠어요","좋았던 순간 기록","음성·글로 메모하기","지난 주행 기록 보기")) {_,which->
+                when(which) {
+                    0->{saveMemo(skillLabel,categoryForSkill(),true);paused=wasPaused;render()}
+                    1->{saveMemo("좋았어요 · $skillLabel",categoryForSkill(),false);paused=wasPaused;render()}
+                    2->{memoDialog=DrivingMemoDialog(this,{text,category,difficult->saveMemo(text,category,difficult)}, {memoDialog=null;paused=wasPaused;render()}).also {it.show(categoryForSkill())}}
+                    else->showHistory()
+                }
+            }.setNegativeButton("닫기") {_,_->paused=wasPaused;render()}.setOnCancelListener {paused=wasPaused;render()}.show()
+    }
+    private fun showMoreHelp() {
+        val s=simple ?: return;val wasPaused=paused;paused=true;voice?.stop();render()
+        val guide=BeginnerScenarioCoach.guidance(s,BeginnerStyle.STEP_BY_STEP)
+        recordingId?.let {database.recordEvent(UUID.randomUUID().toString(),it,"HELP_REQUESTED","USER",JSONObject().put("skill",currentSkill()).put("detail",guide.detail).toString(),System.currentTimeMillis())}
+        val integration=QuestIntegration(this,true)
+        integration.snapshot().session?.current?.context?.let {ctx->
+            integration.reportGuidance(UUID.randomUUID().toString(),ctx,System.currentTimeMillis(),com.hmgchallenge.pleosstarter.quests.AssistanceUsed.ON_REQUEST)
+        }
+        AlertDialog.Builder(this).setTitle("차근차근 다시 확인해요")
+            .setMessage("${guide.headline}\n\n${guide.detail}\n\n${guide.checklist}\n\n추가 설명은 언제든 다시 볼 수 있어요.")
+            .setPositiveButton("이어서 연습") {_,_->paused=wasPaused;render()}
+            .setNeutralButton("어려웠어요") {_,_->saveMemo(guide.checklist,categoryForSkill(),true);paused=wasPaused;render()}
+            .setOnCancelListener {paused=wasPaused;render()}.show()
+    }
+    private fun databaseReport(id: String): String {
+        val report=database.report(id) ?: return "속도·메모·완료 기록을 모으고 있어요"
+        fun lines(value: String): String {val a=JSONArray(value);return (0 until a.length()).joinToString("\n") {"• "+a.getString(it)}}
+        val speedSamples=database.samples(id);val notes=database.notes(id)
+        return "${report.headline}\n\n잘한 점\n${lines(report.goodPoints)}\n\n다음에 연습할 점\n${lines(report.practicePoints)}\n\n속도 기록 ${speedSamples.size}개 · 기억한 순간 ${notes.size}개\n체험 기록은 실제 운전 실력 평가에 합산하지 않아요"
+    }
+    private fun showHistory() {
+        paused=true;voice?.stop();val trips=database.trips()
+        if(trips.isEmpty()){toast("아직 저장된 주행 기록이 없어요");return}
+        val titles=trips.map {t->
+            val date=java.text.SimpleDateFormat("MM/dd HH:mm",java.util.Locale.KOREA).format(java.util.Date(t.startedAt))
+            "$date · ${if(t.source=="VEHICLE")"SDK 속도" else "체험"} · ${if(t.endedAt==null)"진행 중" else "저장됨"}"
+        }
+        AlertDialog.Builder(this).setTitle("지난 연습 돌아보기").setItems(titles.toTypedArray()) {_,which->
+            val id=trips[which].tripId;database.previewReport(id)
+            AlertDialog.Builder(this).setTitle("차근차근 주행 피드백").setMessage(databaseReport(id))
+                .setPositiveButton("닫기",null).setNeutralButton("퀘스트 보기") {_,_->navigation.onQuests()}.show()
+        }.setNegativeButton("이어서 연습") {_,_->paused=false;render()}.show()
+    }
+    override fun onRequestPermissionsResult(requestCode: Int,permissions: Array<out String>,grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        memoDialog?.onPermissionResult(requestCode,grantResults.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED)
+    }
     private fun chooseScenario() {
         model.freeze();paused=true;pauseReason="시나리오를 선택하는 동안 잠시 멈췄어요."
         AlertDialog.Builder(this).setTitle("도로 표시를 따르는 회전 연습")
@@ -487,35 +643,60 @@ class DrivingSimulatorActivity : Activity() {
             .setNegativeButton("계속하기") {_,_->paused=false}.setOnCancelListener {paused=false}.show()
     }
     private fun reset(right: Boolean,laneRight: Boolean) {
+        finishRecording(model.stage==SimStage.COMPLETE)
+        lastRecordingId=null
         automatic=false
         voice?.stop()
         model.freeze();model=DrivingSimulator(right,laneRight);tripId=UUID.randomUUID().toString();recorded.clear();coachNotes.clear();paused=false;lastStage=null;lastCue="";lastFeedback="";render()
     }
     private fun showFeedback() {
         voice?.stop();model.freeze();paused=true;pauseReason="주행 피드백을 확인하는 동안 잠시 멈췄어요."
+        (recordingId ?: lastRecordingId)?.let {database.previewReport(it)}
         val report=reportText()
-        getSharedPreferences("driver_simulator",MODE_PRIVATE).edit().putString("last_report",report).apply()
+        database.saveSnapshot("last-report",report)
         AlertDialog.Builder(this).setTitle("운전석 체험 피드백").setMessage(report)
             .setPositiveButton("계속하기") {_,_->paused=false}
-            .setNeutralButton("퀘스트 보기") {_,_->startActivity(Intent(this,com.hmgchallenge.pleosstarter.quests.QuestActivity::class.java).putExtra("quest_demo",true))}
+            .setNeutralButton("지난 기록") {_,_->showHistory()}
+            .setNegativeButton("퀘스트 보기") {_,_->AppNavigation.quests(this)}
             .setOnCancelListener {paused=false}.show()
     }
     private fun reportText(): String {
+        val stored=(recordingId ?: lastRecordingId)?.let {"\n\n이번 연습 돌아보기\n"+databaseReport(it)}.orEmpty()
         simple?.let {s->return "시나리오 체험 피드백\n\n${s.lesson.title}\n"+
             (if(s.lesson==RoadLesson.PARKING)"• 후진 주차·정렬: ${if(s.complete)"완료" else "진행 중"}\n" else "")+
             (if(s.lesson in setOf(RoadLesson.COMBINED,RoadLesson.LANE))"• 오른쪽 한 차로 변경: ${if(s.laneDone)"완료" else "진행 전"}\n" else "")+
             (if(s.lesson in setOf(RoadLesson.COMBINED,RoadLesson.TURN))"• 우회전: ${if(s.complete)"완료" else "진행 전"}\n" else "")+
             "이동 ${(s.distance-s.startDistance).roundToInt()}m · ${if(s.source==ScenarioSpeed.VEHICLE)"차량 SDK 속도" else "자동 재생 속도"}\n"+
             "위치·차로는 시나리오이며 체험 퀘스트에만 반영합니다.\n"+
-            if(coachNotes.isEmpty())"" else "\n기억한 순간\n"+coachNotes.joinToString("\n")}
+            (if(coachNotes.isEmpty())"" else "\n기억한 순간\n"+coachNotes.joinToString("\n"))+stored}
         return "체험 결과 · 실제 주행 성공 판정 아님\n\n"+model.practices.joinToString("\n") {"• ${it.message}"}+
         "\n\n현재 단계: ${model.stage.title}\n조작 거리 ${model.distance.roundToInt()}m · 남은 차로 ${model.lanesRemaining}개\n퀘스트의 체험 기록에 연결했어요."+
-        if(coachNotes.isEmpty())"" else "\n\n기억한 순간\n"+coachNotes.joinToString("\n")
+        (if(coachNotes.isEmpty())"" else "\n\n기억한 순간\n"+coachNotes.joinToString("\n"))+stored
     }
     fun simpleForDiagnostics()=simple
     fun celebrationForDiagnostics()=celebration?.diagnostics().orEmpty()
     fun celebrationSoundStarts()=celebration?.soundStarts ?: 0
     fun steeringFollowForDiagnostics()=steeringFollow
+    fun learningForDiagnostics()=learningDecision()
+    fun recordingForDiagnostics()=recordingId ?: lastRecordingId
+    fun runtimeActiveForDiagnostics()=active
+    override fun onDestroy() {
+        finishRecording(simple?.complete==true || model.stage==SimStage.COMPLETE);closeSimpleQuest()
+        suspendInternalSession();AppNavigation.forget(this);questObserver?.close();questObserver=null;super.onDestroy()
+    }
+    fun openInternalView(controls: Boolean) {
+        if(!::navigation.isInitialized)return
+        if(controls && navigation.visibility==View.VISIBLE)navigation.onControls()
+        else if(!controls && root.visibility==View.VISIBLE)root.findViewWithTag<Button>("sim_navigation").performClick()
+    }
+    override fun onNewIntent(value: Intent) {super.onNewIntent(value);intent=value;consumeInternalView()}
+    private fun consumeInternalView() {
+        intent.getStringExtra("app_view")?.let {intent.removeExtra("app_view");openInternalView(it=="controls")}
+    }
+    override fun onResume() {
+        super.onResume();screenVisible=true;consumeInternalView()
+        if(pendingCelebration){pendingCelebration=false;celebration?.celebrate(celebrationEnabled);toast("좋아요! 연습 기록을 저장했어요")}
+    }
     fun navigationForDiagnostics()=navigation.diagnostics()
     fun simulatorForDiagnostics()=model
     fun pausedForDiagnostics()=paused
@@ -539,16 +720,22 @@ class DrivingSimulatorActivity : Activity() {
         parent.addView(this,LinearLayout.LayoutParams(0,-2,1f).apply {rightMargin=dp(5)})
     }
     override fun onPause() {
-        if(active) {voice?.stop();model.freeze();paused=true;pauseReason="시스템 카메라 등 다른 화면으로 전환되어 체험을 멈췄어요.";render()}
+        screenVisible=false;voice?.stop()
+        if(active && !AppNavigation.internalTransition) {model.freeze();paused=true;pauseReason="앱 밖의 화면으로 전환되어 체험을 멈췄어요.";render()}
         super.onPause()
     }
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {super.onConfigurationChanged(newConfig);build()}
     override fun onStop() {
-        if(isFinishing)closeSimpleQuest()
-        if(simple?.started==true || model.practices.isNotEmpty() || coachNotes.isNotEmpty())getSharedPreferences("driver_simulator",MODE_PRIVATE).edit().putString("last_report",reportText()).apply()
+        if(isFinishing){finishRecording(simple?.complete==true || model.stage==SimStage.COMPLETE);closeSimpleQuest();suspendInternalSession()}
+        super.onStop()
+    }
+    fun suspendInternalSession() {
+        if(!active)return
+        if(simple?.started==true || model.practices.isNotEmpty() || coachNotes.isNotEmpty())database.saveSnapshot("last-report",reportText())
+        memoDialog?.dismiss();memoDialog=null
         active=false;model.freeze();paused=true;handler.removeCallbacksAndMessages(null);bridge?.stop();bridge=null;voice?.release();voice=null
         celebration?.stop();celebration=null
         automatic=false
-        sdkSource?.stop();sdkSource=null;sdkSpeedSource?.stop();sdkSpeedSource=null;sdkSpeed=null;sdkSpeedAt=0;super.onStop()
+        sdkSource?.stop();sdkSource=null;sdkSpeedSource?.stop();sdkSpeedSource=null;sdkSpeed=null;sdkSpeedAt=0
     }
 }

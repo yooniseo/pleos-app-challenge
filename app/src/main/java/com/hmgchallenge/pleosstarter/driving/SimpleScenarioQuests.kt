@@ -15,7 +15,8 @@ class SimpleScenarioQuests(val tripId: String, private val startedAt: Long) {
         }
         return QuestEngine.beginTrip(next,tripId,QuestEvidence.SIMULATION,startedAt)
     }
-    fun sync(state: QuestState, scenario: SimpleRoadScenario, now: Long): QuestState {
+    fun sync(state: QuestState, scenario: SimpleRoadScenario, now: Long,
+             assistance: (CoachSkill)->AssistanceUsed = {AssistanceUsed.DETAILED}): QuestState {
         if (!state.demo || !scenario.started || state.session?.tripId != tripId) return state
         var next = state
         fun event(kind: SituationKind, type: SituationEventType) {
@@ -23,9 +24,12 @@ class SimpleScenarioQuests(val tripId: String, private val startedAt: Long) {
             val ctx = SituationContext(tripId,"$tripId:${kind.id}","$tripId:road",kind,QuestEvidence.SIMULATION,startedAt)
             next = QuestEngine.acceptEvent(next,SituationEvent("${ctx.occurrenceId}:$type",ctx,type,now,
                 confirmation=if(type==SituationEventType.PRACTICED) ConfirmationBasis.DEMO else ConfirmationBasis.UNKNOWN,
-                assistanceUsed=AssistanceUsed.DETAILED))
+                assistanceUsed=assistance(kind.skill)))
         }
-        fun enter(kind: SituationKind) { event(kind,SituationEventType.ENTERED);event(kind,SituationEventType.GUIDANCE_PROVIDED) }
+        fun enter(kind: SituationKind) {
+            event(kind,SituationEventType.ENTERED)
+            if(assistance(kind.skill)!=AssistanceUsed.NONE)event(kind,SituationEventType.GUIDANCE_PROVIDED)
+        }
         if(scenario.lesson==RoadLesson.PARKING) {
             enter(SituationKind.PARKING)
             if(scenario.complete)event(SituationKind.PARKING,SituationEventType.PRACTICED)

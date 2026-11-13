@@ -7,6 +7,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.hmgchallenge.pleosstarter.quests.*
+import com.hmgchallenge.pleosstarter.quests.EvidenceSource as QuestEvidenceSource
+import com.hmgchallenge.pleosstarter.quests.GuidanceLevel as QuestGuidanceLevel
 import java.util.UUID
 
 /** Part 1 scaffold only. Replace this port with real guidance; no SDK, navigation, or actuator here. */
@@ -26,7 +28,7 @@ class PlaceholderDrivingGuide : DrivingGuidePort {
                 setOnClickListener { action() }
             })
             control("시연: 새 주행 시작") {
-                if (model?.demo == true) host.startTrip(UUID.randomUUID().toString(), EvidenceSource.SIMULATION, now())
+                if (model?.demo == true) host.startTrip(UUID.randomUUID().toString(), QuestEvidenceSource.SIMULATION, now())
             }
             control("시연: 차로 변경 상황 진입") { enter(SituationKind.LANE_RIGHT) }
             control("시연: 우회전 상황 진입") { enter(SituationKind.TURN_RIGHT) }
@@ -35,8 +37,8 @@ class PlaceholderDrivingGuide : DrivingGuidePort {
             control("시연: 안내 제공 사실 전달") { current {
                 val used = when {
                     model?.coachingEnabled != true -> AssistanceUsed.NONE
-                    model?.guidanceLevel == GuidanceLevel.DETAILED -> AssistanceUsed.DETAILED
-                    model?.guidanceLevel == GuidanceLevel.BRIEF -> AssistanceUsed.BRIEF
+                    model?.guidanceLevel == QuestGuidanceLevel.DETAILED -> AssistanceUsed.DETAILED
+                    model?.guidanceLevel == QuestGuidanceLevel.BRIEF -> AssistanceUsed.BRIEF
                     else -> AssistanceUsed.ON_REQUEST
                 }
                 host.reportGuidance(id(), it, now(), used)
@@ -68,7 +70,7 @@ class PlaceholderDrivingGuide : DrivingGuidePort {
         val next = sequence.firstOrNull { item -> snapshot.situations.none { it.context.kind == item && it.outcome != SituationEventType.CANCELLED } }
         if (snapshot.tripFinished || kind != next) return
         val trip = currentTrip ?: return
-        host?.enterSituation(id(), SituationContext(trip, id(), "right-turn-intersection", kind, EvidenceSource.SIMULATION, now()))
+        host?.enterSituation(id(), SituationContext(trip, id(), "right-turn-intersection", kind, QuestEvidenceSource.SIMULATION, now()))
     }
     private fun current(action: (SituationContext) -> Unit) { if (model?.demo == true) model?.current?.let(action) }
     private fun id() = UUID.randomUUID().toString()

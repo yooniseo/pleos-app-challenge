@@ -6,13 +6,14 @@ import java.io.File
 
 /** Local event journal and quest integration point. No networking, grading, or quest catalogue. */
 class CoachRepository(context: Context) {
+    private val database=com.hmgchallenge.pleosstarter.core.data.SharedCoachRepository.get(context)
     private val file = File(context.filesDir, "driving-coach-events.jsonl")
     private val prefs = context.getSharedPreferences("driving-coach", Context.MODE_PRIVATE)
     var questPort: QuestCoachPort = UnconnectedQuestPort
     var feedbackPort: FeedbackCoachPort = UnconnectedFeedbackPort
 
     @Synchronized fun append(event: CoachEvent) {
-        file.appendText(encode(event).toString() + "\n", Charsets.UTF_8)
+        check(database.recordEvent(event.eventId,event.tripId,"LEGACY_COACH",event.source.name,encode(event).toString(),event.timestamp)) {"코치 이벤트 DB 저장 실패"}
         // A broken optional consumer must not prevent the coach from working. Journal supports replay.
         runCatching { questPort.onCoachEvent(event) }
         runCatching { feedbackPort.onCoachEvent(event) }
@@ -21,24 +22,32 @@ class CoachRepository(context: Context) {
 
     /** Cursor is eventId from the last successfully handled record. Missing cursors replay from start. */
     @Synchronized fun eventsAfter(eventId: String? = null): List<CoachEvent> {
-        if (!file.exists()) return emptyList()
-        val all = file.useLines { lines -> lines.mapNotNull { runCatching { decode(JSONObject(it)) }.getOrNull() }.toList() }
+        if(database.snapshot("legacy-journal-imported")==null) {
+            file.takeIf {it.exists()}?.useLines {lines->lines.forEach {line->runCatching {decode(JSONObject(line))}.getOrNull()?.let {e->
+                check(database.recordEvent(e.eventId,e.tripId,"LEGACY_COACH",e.source.name,encode(e).toString(),e.timestamp))
+            }}}
+            check(database.saveSnapshot("legacy-journal-imported","true"))
+        }
+        val all=database.journal().mapNotNull {runCatching {decode(JSONObject(it.payload))}.getOrNull()}
         val offset = eventId?.let { id -> all.indexOfFirst { it.eventId == id } } ?: -1
         return all.drop(offset + 1)
     }
 
     fun preferences(): CoachPreferences {
         if (questPort !== UnconnectedQuestPort) return questPort.preferences()
+        val settings=JSONObject(database.snapshot("settings:voice") {
+            JSONObject().apply {SituationType.values().forEach {put(it.name,prefs.getString(it.name,"DETAILED"))};put("voice",prefs.getBoolean("voice",false));put("demo-indicator",prefs.getBoolean("demo-indicator",false))}.toString()
+        }!!)
         return CoachPreferences(SituationType.values().associateWith {
-            runCatching { GuidanceLevel.valueOf(prefs.getString(it.name, "DETAILED")!!) }.getOrDefault(GuidanceLevel.DETAILED)
-        }, prefs.getBoolean("voice", false), prefs.getBoolean("demo-indicator", false))
+            runCatching {GuidanceLevel.valueOf(settings.optString(it.name,"DETAILED"))}.getOrDefault(GuidanceLevel.DETAILED)
+        },settings.optBoolean("voice"),settings.optBoolean("demo-indicator"))
     }
 
     fun savePreferences(value: CoachPreferences) {
-        prefs.edit().apply {
-            SituationType.values().forEach { putString(it.name, value.level(it).name) }
-            putBoolean("voice", value.voiceEnabled); putBoolean("demo-indicator", value.demoAutomaticIndicator)
-        }.apply()
+        check(database.saveSnapshot("settings:voice",JSONObject().apply {
+            SituationType.values().forEach {put(it.name,value.level(it).name)}
+            put("voice",value.voiceEnabled);put("demo-indicator",value.demoAutomaticIndicator)
+        }.toString())) {"음성 설정 DB 저장 실패"}
     }
 
     fun focusedGoal() = questPort.focusedGoalLabel()

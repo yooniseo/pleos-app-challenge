@@ -2,7 +2,7 @@ package com.hmgchallenge.pleosstarter.driving
 
 import kotlin.math.*
 
-enum class BeginnerStyle(val title: String) { STEP_BY_STEP("차근차근"), VISUAL("핸들 중심"), BRIEF("짧게 알려줘") }
+enum class BeginnerStyle(val title: String) { STEP_BY_STEP("차근차근"), VISUAL("핸들 중심"), BRIEF("짧게 알려줘"), ADAPTIVE("연습에 맞춰") }
 data class BeginnerGuidance(val headline: String,val detail: String,val checklist: String,val steering: Int,
                             val direction: String="가운데",val amount: String="유지")
 

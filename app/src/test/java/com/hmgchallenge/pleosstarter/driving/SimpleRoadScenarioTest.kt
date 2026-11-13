@@ -6,6 +6,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SimpleRoadScenarioTest {
+    @Test fun optionalModeDoesNotClaimAutomaticGuidance() {
+        val s=SimpleRoadScenario(course(),RoadLesson.LANE);s.start()
+        val link=SimpleScenarioQuests("optional",100)
+        val state=link.sync(link.begin(QuestState(),100),s,101) {AssistanceUsed.NONE}
+        assertTrue(state.session!!.events.none {it.type==SituationEventType.GUIDANCE_PROVIDED})
+        assertTrue(state.evidence.isEmpty())
+    }
+    @Test fun actualSelectedAssistanceIsRecordedWithScenarioEvents() {
+        val s=SimpleRoadScenario(course(),RoadLesson.LANE);s.start()
+        val link=SimpleScenarioQuests("brief",100)
+        val state=link.sync(link.begin(QuestState(),100),s,101) {AssistanceUsed.BRIEF}
+        assertEquals(AssistanceUsed.BRIEF,state.session!!.events.single {it.type==SituationEventType.GUIDANCE_PROVIDED}.assistanceUsed)
+    }
     private fun course()=NavigationSimulationRoute(listOf(
         GeoPoint(37.296551,127.042500),GeoPoint(37.296757,127.041551),GeoPoint(37.296868,127.041395),
         GeoPoint(37.296979,127.041311),GeoPoint(37.297197,127.041292),GeoPoint(37.297454,127.041496),GeoPoint(37.297553,127.041595)))

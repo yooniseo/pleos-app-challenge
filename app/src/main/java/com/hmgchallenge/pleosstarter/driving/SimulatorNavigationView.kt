@@ -35,6 +35,9 @@ class SimulatorNavigationView(context: Context): FrameLayout(context) {
     var onProfile: ()->Unit={}
     var onSteeringPractice: ()->Unit={}
     var onSteeringInput: (Double)->Unit={}
+    var onHelp: ()->Unit={}
+    var learningLabel=""
+    var profileLabel=""
     var steeringPractice: SteeringFollowPractice?=null
     var coachStyle=BeginnerStyle.STEP_BY_STEP
     var celebrationMessage=""
@@ -63,6 +66,7 @@ class SimulatorNavigationView(context: Context): FrameLayout(context) {
         voiceButton=action("음성 켜기","nav_voice",838f,630f,142f,45f){onVoice()}
         action("운전 조작","nav_controls",722f,288f,124f,43f){onControls()}
         action("순간 기록","nav_note",856f,288f,124f,43f){onNote()}
+        action("설명 더 보기","nav_help",722f,341f,258f,43f){onHelp()}
     }
     private fun action(title: String,key: String,x: Float,y: Float,w: Float,h: Float,action: ()->Unit)=Button(context).apply {
         text=title;tag=key;isAllCaps=false;textSize=15f;minHeight=0;minimumHeight=0;setPadding(3,0,3,0)
@@ -92,11 +96,12 @@ class SimulatorNavigationView(context: Context): FrameLayout(context) {
         guideWheel.interactive=follow!=null;guideWheel.angle=follow?.angle ?: guide.steering.toDouble();guideWheel.target=follow?.target ?: 0.0;guideWheel.invalidate()
         steeringButton.text=if(follow==null)"따라하기" else "연습 마치기"
         guideWheel.contentDescription="핸들을 ${guide.direction} ${guide.amount}. ${guide.detail}"
-        profileButton.text="나의 코치 · ${coachStyle.title}"
+        profileButton.text="나의 코치 · ${profileLabel.ifBlank {coachStyle.title}}"
         hud.apply {
             cue=if(paused && follow==null)"일시정지 중 · 계속하기로 이어가요" else guide.headline
             guidance=guide;this@SimulatorNavigationView.celebrationMessage.let {reward=it}
             rewardUntil=this@SimulatorNavigationView.celebrationUntil;rewardStatus=this@SimulatorNavigationView.celebrationStatus
+            learning=this@SimulatorNavigationView.learningLabel
             distance=s.distance;end=s.endDistance;remaining=(s.course.turnDistance-s.distance).coerceAtLeast(0.0)
             lane=s.currentLane;laneDone=s.laneDone;turnDone=s.complete && s.lesson!=RoadLesson.LANE
             lesson=s.lesson;complete=s.complete;speed=if(s.source==ScenarioSpeed.VEHICLE)(receivedSpeed ?: 0.0)*3.6 else if(paused)0.0 else s.speedMps*3.6
@@ -124,14 +129,14 @@ class SimulatorNavigationView(context: Context): FrameLayout(context) {
         "turnRemaining" to hud.remaining.toString(),"currentLane" to hud.lane.toString(),"lanesRemaining" to (3-hud.lane).toString(),
         "heading" to (currentFrame?.bearing ?: 0.0).toString(),"cue" to hud.cue,"speedKph" to hud.speed.toString(),
         "questLaneDone" to hud.laneDone.toString(),"questTurnDone" to hud.turnDone.toString(),"questSaved" to hud.questSaved.toString(),"speedSource" to hud.source.name,
-        "steeringTarget" to hud.guidance.steering.toString(),"coachStyle" to coachStyle.name,"celebration" to celebrationStatus)
+        "steeringTarget" to hud.guidance.steering.toString(),"coachStyle" to coachStyle.name,"celebration" to celebrationStatus,"learning" to learningLabel)
     private class NavigationHud(context: Context): View(context) {
         var cue="";var distance=0.0;var end=192.2;var remaining=87.0;var lane=2
         var laneDone=false;var turnDone=false;var complete=false;var speed=0.0;var progress=0f
         var started=false;var questSaved=true;var source=ScenarioSpeed.REPLAY;var lesson=RoadLesson.COMBINED
         var speedKnown=true;var parkingGear="P"
         var guidance=BeginnerGuidance("","","",0)
-        var reward="";var rewardUntil=0L;var rewardStatus=""
+        var reward="";var rewardUntil=0L;var rewardStatus="";var learning=""
         private val p=Paint(Paint.ANTI_ALIAS_FLAG)
         private val bold=resources.getFont(R.font.asta_sans_bold)
         private val medium=resources.getFont(R.font.asta_sans_medium)
@@ -185,7 +190,7 @@ class SimulatorNavigationView(context: Context): FrameLayout(context) {
                 if(lesson!=RoadLesson.LANE)quest(c,if(lesson==RoadLesson.TURN)158f else 198f,if(lesson==RoadLesson.TURN)1 else 2,"3차로에서 우회전",turnDone,lesson==RoadLesson.TURN || laneDone)
             }
             val celebrating=android.os.SystemClock.elapsedRealtime()<rewardUntil
-            text(c,if(!questSaved)"저장 실패 · 다시 시작해 주세요" else if(celebrating)reward else if(complete)"좋아요! 체험 기록에 저장했어요" else "시나리오 완료 시 퀘스트에 반영",720f,228f,14f,if(!questSaved)Color.RED else if(celebrating)purple else muted)
+            text(c,if(!questSaved)"저장 실패 · 다시 시작해 주세요" else if(celebrating)reward else if(complete)"좋아요! 체험 기록에 저장했어요" else learning.ifBlank {"시나리오 완료 시 퀘스트에 반영"},720f,228f,13f,if(!questSaved)Color.RED else if(celebrating)purple else muted)
             text(c,rewardStatus.take(28),720f,253f,12f,muted)
             card(c,20f,494f,308f,170f)
             text(c,if(parking)"주차 코치 · 가상 연습장" else "경기대 후문 주변",39f,528f,21f,ink,true)

@@ -15,6 +15,7 @@ import java.io.File
 /** Dependency-free emulator checks; live_probe=1 runs read-only SDK observation only. */
 class CoachSmokeRunner : CockpitSmokeRunner() {
     private var cockpitProbe=false
+    private var databaseProbe=false
     private var live=false
     private var strict=false
     private var seconds=90
@@ -23,6 +24,7 @@ class CoachSmokeRunner : CockpitSmokeRunner() {
     private var minimumObservationSeconds=0
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments);live=arguments?.getString("live_probe")=="1"
+        databaseProbe=arguments?.getString("database_probe")=="1"
         cockpitProbe=arguments?.getString("cockpit_probe")=="1" || arguments?.getString("auto_probe")=="1" || arguments?.getString("navigation_probe")=="1" || arguments?.getString("interaction_probe")=="1"
         strict=arguments?.getString("strict_live")=="1"
         seconds=arguments?.getString("seconds")?.toIntOrNull()?.coerceIn(15,180) ?: 90
@@ -32,7 +34,9 @@ class CoachSmokeRunner : CockpitSmokeRunner() {
         start()
     }
     override fun onStart() {
+        if(databaseProbe) {SharedDatabaseProbe(this).run();return}
         if(cockpitProbe) {super.onStart();return}
+        val isolated=IsolatedCoachDatabase(targetContext)
         val result=Bundle()
         val journal=File(targetContext.filesDir,"driving-coach-events.jsonl")
         val original=journal.takeIf {it.exists()}?.readBytes()
@@ -175,6 +179,7 @@ class CoachSmokeRunner : CockpitSmokeRunner() {
             activity?.let {a->runOnMainSync {a.finish()}}
             if(questBefore!=null) questStore?.save(questBefore)
             if(original==null) journal.delete() else journal.writeBytes(original)
+            isolated.close()
         }
         finish(resultCode,result)
     }

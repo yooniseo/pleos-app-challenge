@@ -36,6 +36,9 @@ class DrivingCoachActivity : Activity() {
     private var demo = true
     private var playing = false
     private var page = "driving"
+    private var requestedPage: String?=null
+    private val opensMapDirectly get()=intent.getBooleanExtra("open_cockpit",false) ||
+        (intent.action==Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER))
     private var parkingStyle = ParkingStyle.REVERSE
     private var parkingStep = 0
     private var parkingRequested = false
@@ -84,6 +87,7 @@ class DrivingCoachActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         demo = savedInstanceState?.getBoolean("demo", true) ?: !intent.getBooleanExtra("live_mode", false)
+        requestedPage=intent.getStringExtra("app_page");intent.removeExtra("app_page")
         window.statusBarColor = bg; window.navigationBarColor = bg
         repository = CoachRepository(this).apply {
             questPort = CoachHostBindings.questPort; feedbackPort = CoachHostBindings.feedbackPort
@@ -103,13 +107,17 @@ class DrivingCoachActivity : Activity() {
             runCatching { repository.append(event) }.onFailure { statuses["기록"] = "저장 실패 · ${it.javaClass.simpleName}" }
         }, tripId = questBridge?.tripId ?: CoachHostBindings.activeTripId?.takeIf { !demo && it.isNotBlank() } ?: UUID.randomUUID().toString())
         engine.preferences = repository.preferences()
-        if (demo) engine.startDemo()
+        if (demo && !opensMapDirectly) engine.startDemo()
         lastSpokenKey = null
         checks.clear(); parkingInstance = UUID.randomUUID().toString(); parkingStep = 0
     }
 
     override fun onStart() {
-        super.onStart(); active = true
+        super.onStart()
+    }
+    private fun startVisibleRuntime() {
+        if(active)return
+        active = true
         if (!demo && engine.phase == CoachPhase.CANCELLED) createEngine()
         engine.preferences=repository.preferences()
         startSources()
@@ -128,12 +136,15 @@ class DrivingCoachActivity : Activity() {
             intent.removeExtra("open_cockpit")
             intent.removeCategory(Intent.CATEGORY_LAUNCHER)
             openSimulator()
+            return
         }
+        startVisibleRuntime()
     }
 
     private val tick = object : Runnable {
         override fun run() {
             if (!active) return
+            requestedPage?.takeIf {detailsAllowed()}?.let {page=it;requestedPage=null;buildPage()}
             engine.expireNavigation(); enforceDetailGate(); updateDriving()
             handler.postDelayed(this, 1_000)
         }
@@ -234,7 +245,7 @@ class DrivingCoachActivity : Activity() {
         content.addView(label("한 걸음씩, 함께 운전해요",27f).apply { setTypeface(null,Typeface.BOLD) })
         val tabs = row(content)
         button(tabs,"주행 안내","tab_driving") { page="driving";buildPage() }
-        button(tabs,"운전석 체험","simulator") {
+        button(tabs,"← 지도로 돌아가기","simulator") {
             if(!detailsAllowed()) {blocked();return@button}
             stopPlayback();openSimulator()
         }
@@ -245,7 +256,7 @@ class DrivingCoachActivity : Activity() {
         goalView=label("",14f,muted);content.addView(goalView)
         questStatusView=label("",14f,mint);content.addView(questStatusView)
         when(page) {"parking"->buildParking();"feedback"->buildFeedback();else->buildDriving()}
-        setContentView(scroll)
+        AppNavigation.content(this,scroll,"more",true)
         updateDriving()
     }
 
@@ -433,7 +444,7 @@ class DrivingCoachActivity : Activity() {
             val key="${engine.instanceId}:${cue.id}:${engine.preferences.level(engine.type)}"
             if(key!=lastSpokenKey) {
                 voice?.stop()
-                if(autoSpeak && engine.preferences.voiceEnabled) voice?.speak(cue.text)
+                if(autoSpeak && requestedPage==null && engine.preferences.voiceEnabled) voice?.speak(cue.text)
                 lastSpokenKey=key
             }
         } else if(!engine.active && lastSpokenKey!=null) {
@@ -645,7 +656,7 @@ class DrivingCoachActivity : Activity() {
     }
 
     private fun buildFeedback() {
-        if(demo) getSharedPreferences("driver_simulator",MODE_PRIVATE).getString("last_report",null)?.let {report->
+        if(demo) com.hmgchallenge.pleosstarter.core.data.SharedCoachRepository.get(this).snapshot("last-report") {getSharedPreferences("driver_simulator",MODE_PRIVATE).getString("last_report",null)}?.let {report->
             val simulatorPanel=card(content)
             simulatorPanel.addView(label("최근 운전석 체험",18f,mint));simulatorPanel.addView(label(report,15f,muted))
         }
@@ -700,7 +711,7 @@ class DrivingCoachActivity : Activity() {
     private fun openSimulator() {
         // Pleos labels an embedded app task by its root Activity. The debug cockpit must
         // have its own root, instead of inheriting the parked-only coach task's label.
-        startActivity(Intent(this,DrivingSimulatorActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        AppNavigation.drive(this)
     }
     private fun enforceDetailGate() {
         if(!detailsAllowed()) {
@@ -743,7 +754,16 @@ class DrivingCoachActivity : Activity() {
         stopSources();super.onStop()
         routeClient?.cancel()
     }
+    override fun onPause() {
+        active=false;handler.removeCallbacksAndMessages(null);voice?.stop();stopSources();routeClient?.cancel()
+        super.onPause()
+    }
     override fun onSaveInstanceState(outState: Bundle) {outState.putBoolean("demo",demo);super.onSaveInstanceState(outState)}
+    override fun onNewIntent(value: Intent) {
+        super.onNewIntent(value);intent=value
+        requestedPage=value.getStringExtra("app_page");intent.removeExtra("app_page")
+        requestedPage?.takeIf {detailsAllowed()}?.let {page=it;requestedPage=null;buildPage()}
+    }
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig);buildPage()
     }

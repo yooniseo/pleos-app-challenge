@@ -316,7 +316,7 @@ class MainActivity : Activity() {
         val probe = sttProbe
         if (probe == null) {
             // 첫 클릭: 초기화만. "준비됨"이 뜬 뒤 다시 누르면 인식 시작
-            sttProbe = SttProbe(this) { sttStatus.text = it }.also { it.start() }
+            sttProbe = SttProbe(this,onStatus={sttStatus.text=it}).also { it.start() }
         } else probe.request()
     }
 

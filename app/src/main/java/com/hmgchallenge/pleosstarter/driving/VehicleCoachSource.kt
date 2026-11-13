@@ -12,6 +12,7 @@ import ai.pleos.playground.vehicle.api.model.area.SeatArea
 import ai.pleos.playground.vehicle.api.model.capability.AccessType
 import ai.pleos.playground.vehicle.constant.area.SeatValue
 import ai.pleos.playground.vehicle.listener.SeatBeltBuckledStateListener
+import java.util.concurrent.Executors
 
 /** Read-only trip context plus an explicit parked ambient-color preview with restoration. */
 class VehicleCoachSource(private val context: Context,private val onState: (VehicleCoachState)->Unit,
@@ -21,7 +22,12 @@ class VehicleCoachSource(private val context: Context,private val onState: (Vehi
     private var manager: CarPropertyManager?=null
     private var vehicle: Vehicle?=null
     private var state=VehicleCoachState()
-    private var stopped=false
+    @Volatile private var stopped=false
+    companion object {
+        // Capability discovery performs cold Kotlin reflection inside the SDK.
+        // Serialize setup/release off the UI thread so opening another screen stays responsive.
+        private val setup=Executors.newSingleThreadExecutor {r->Thread(r,"coach-vehicle-setup").apply {isDaemon=true}}
+    }
     private val seat=SeatArea(SeatValue.ROW_1_LEFT)
     private var beltSupported=false
     private var lightArea: SeatArea?=null
@@ -49,8 +55,9 @@ class VehicleCoachSource(private val context: Context,private val onState: (Vehi
                 readCar()
             }.onFailure {onStatus("기어·주차 브레이크 조회 미지원")}
         }
-        runCatching {
-            val connected=Vehicle(context.applicationContext).also {vehicle=it;it.initialize()}
+        val connected=Vehicle(context.applicationContext).also {vehicle=it}
+        setup.execute {if(!stopped)runCatching {
+            connected.initialize()
             connected.getSeat().checkSeatBeltBuckledCapabilities(onComplete={config,areas->post {
                 beltSupported=config.accessType in listOf(AccessType.READ,AccessType.READ_WRITE) && areas.contains(seat)
                 if(beltSupported) {
@@ -62,7 +69,7 @@ class VehicleCoachSource(private val context: Context,private val onState: (Vehi
                 observe(ApiObservation("AMBIENT_CAPABILITY","VALUE",mapOf("accessType" to config.accessType.name,
                     "supportedArea" to lightArea?.values?.joinToString {it.name}.orEmpty(),"areas" to areas.joinToString(";") {it.values.joinToString {v->v.name}})))
             }},onFailed={post {onStatus("이 차량은 조명 체험을 지원하지 않아요")}})
-        }.onFailure {onStatus("차량 부가 상태 연결 실패")}
+        }.onFailure {post {onStatus("차량 부가 상태 연결 실패")}}}
         main.post(poll)
     }
     private val poll=object : Runnable {
@@ -123,11 +130,15 @@ class VehicleCoachSource(private val context: Context,private val onState: (Vehi
         }},onFailed={error->main.post {restoring=false;onStatus("조명 원래 색상 복원 실패 · 차량 설정을 확인해 주세요");observe(ApiObservation("AMBIENT","RESTORE_FAILED",mapOf("error" to (error.message ?: error.javaClass.simpleName))));if(stopped)releaseVehicle()}})
     }
     private fun post(action: ()->Unit) {main.post {if(!stopped)runCatching(action).onFailure {onStatus("차량 상태 처리 실패")}}}
-    private fun releaseVehicle() {runCatching {vehicle?.release()};vehicle=null}
+    private fun releaseVehicle() {
+        val connected=vehicle;vehicle=null
+        setup.execute {runCatching {connected?.release()}}
+    }
     fun stop() {
         stopped=true;main.removeCallbacks(poll)
         runCatching {manager?.unregisterCallback(callback)};runCatching {car?.disconnect()};manager=null;car=null
-        runCatching {vehicle?.getSeat()?.unregisterSeatBeltBuckledState(seat,beltListener)}
+        val connected=vehicle
+        setup.execute {runCatching {connected?.getSeat()?.unregisterSeatBeltBuckledState(seat,beltListener)}}
         if(originalColor!=null && !colorPending)restoreColor()
         if(originalColor==null && !colorPending)releaseVehicle()
     }

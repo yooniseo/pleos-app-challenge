@@ -32,6 +32,7 @@ class QuestActivity : Activity() {
     private var guard: QuestDrivingGuard? = null
     private var restricted = false
     private var storageAvailable = true
+    private var storeObserver: java.io.Closeable?=null
     // Driving guide integration point: replace this implementation, not the quest screens or engine.
     private val guide: DrivingGuidePort = DrivingCoachLauncher()
 
@@ -45,6 +46,7 @@ class QuestActivity : Activity() {
     }
     override fun onResume() {
         super.onResume(); loadProfile()
+        storeObserver?.close();storeObserver=store.observe({state=it;render()},{storageAvailable=false;render()})
         if (packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)) {
             guard?.stop(); restricted = true
             guard = QuestDrivingGuard(this) { value ->
@@ -80,9 +82,12 @@ class QuestActivity : Activity() {
         if (restricted) {
             root.addView(label(getString(R.string.quest_parked_only), 26f, accent))
             root.addView(label(getString(R.string.quest_parked_only_hint), 18f, muted))
-            setContentView(root); return
+            AppNavigation.content(this,root,"quests",true); return
         }
         root.addView(label("차근차근  /  퀘스트 · 성장 · 안내 설정", 21f, accent))
+        root.addView(button("← 지도로 돌아가기") {
+            AppNavigation.drive(this)
+        }.apply {tag="screen_map"})
         val modes = row()
         listOf(true to "시연 모드", false to "내 연습 기록").forEach { (value, title) ->
             modes.addView(button(title, demo == value) {
@@ -101,7 +106,7 @@ class QuestActivity : Activity() {
         when (tab) { 0 -> quests(body); 1 -> settings(body); else -> connection(body) }
         scroll = ScrollView(this).apply { isFillViewport = true; addView(body) }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root)
+        AppNavigation.content(this,root,if(tab==1)"more" else "quests",true)
         scroll?.post { scroll?.scrollTo(0, position) }
         guide.render(state.guideUiModel())
     }
@@ -323,6 +328,9 @@ class QuestActivity : Activity() {
     private fun levelName(level: GuidanceLevel) = when (level) { GuidanceLevel.DETAILED -> "자세히"; GuidanceLevel.BRIEF -> "간략히"; GuidanceLevel.ON_REQUEST -> "요청 시" }
     private fun phaseName(value: QuestPhase) = when (value) { QuestPhase.BEFORE -> "주행 전"; QuestPhase.DRIVING -> "주행 중"; QuestPhase.PARKING -> "주차"; QuestPhase.AFTER -> "주행 후" }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    override fun onStop() { guard?.stop(); guard = null; dialog?.dismiss(); guide.release(); super.onStop() }
+    override fun onNewIntent(value: android.content.Intent) {
+        super.onNewIntent(value);intent=value;tab=value.getIntExtra("quest_tab",0);demo=value.getBooleanExtra("quest_demo",true);loadProfile();render(true)
+    }
+    override fun onStop() { storeObserver?.close();storeObserver=null;guard?.stop(); guard = null; dialog?.dismiss(); guide.release(); super.onStop() }
     override fun onSaveInstanceState(out: Bundle) { out.putBoolean("demo", demo); out.putInt("tab", tab); out.putInt("phase", phase.ordinal); super.onSaveInstanceState(out) }
 }

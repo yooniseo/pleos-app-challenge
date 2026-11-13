@@ -20,6 +20,7 @@ class QuestSmokeInstrumentation : Instrumentation() {
     override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
     override fun onStart() {
         val result = Bundle(); var exitCode = Activity.RESULT_CANCELED
+        val isolated=com.hmgchallenge.pleosstarter.driving.IsolatedCoachDatabase(targetContext)
         val demo = QuestStore(targetContext, true); val personal = QuestStore(targetContext, false)
         var oldDemo: QuestState? = null; var oldPersonal: QuestState? = null
         try {
@@ -95,6 +96,7 @@ class QuestSmokeInstrumentation : Instrumentation() {
             if (::activity.isInitialized) runOnMainSync { activity.finish() }
             oldDemo?.let { demo.save(it) }; oldPersonal?.let { personal.save(it) }
         }
+        isolated.close()
         finish(exitCode, result)
     }
     private fun launch() {

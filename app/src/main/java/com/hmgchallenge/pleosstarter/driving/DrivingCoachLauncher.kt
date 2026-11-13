@@ -17,9 +17,10 @@ class DrivingCoachLauncher : DrivingGuidePort {
         orientation=LinearLayout.VERTICAL
         label=TextView(context).apply {setTextColor(Color.WHITE);textSize=17f};addView(label)
         addView(Button(context).apply {
-            text="현재 목표로 주행 안내 열기";tag="open_driving_coach";isAllCaps=false;minHeight=(56*resources.displayMetrics.density).toInt()
+            text="지도에서 주행 코치 열기";tag="open_driving_coach";isAllCaps=false;minHeight=(56*resources.displayMetrics.density).toInt()
             setOnClickListener {
                 val current=model ?: return@setOnClickListener
+                if(current.demo && context is android.app.Activity) {AppNavigation.drive(context);return@setOnClickListener}
                 context.startActivity(Intent(context,DrivingCoachActivity::class.java)
                     .putExtra("live_mode",!current.demo)
                     .putExtra("quest_trip_id",current.tripId.takeIf { !current.tripFinished }))
