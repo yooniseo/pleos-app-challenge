@@ -17,6 +17,8 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
     var completed=0
     var target=0
     var complete=false
+    var vehicleRecord=false
+    var recordSource="DEMO  |  시연용 가상 기록"
     override fun drawScene(c: Canvas) {
         if(trip==null) {
             c.drawColor(Color.rgb(239,242,250))
@@ -31,26 +33,26 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
         text(c,if(complete)"CLEAR!" else "RECORD",63f,149f,if(complete)113f else 90f,Color.rgb(249,217,77),true)
         text(c,"한 번 더 운전할 용기가 생겼어요!",69f,289f,30f,Palette.cream)
         text(c,"지금 등급은",69f,390f,20f,Color.WHITE)
-        text(c,state.levelName,67f,430f,43f,Color.WHITE,true)
+        text(c,if(vehicleRecord)"신호 조건 연습" else state.levelName,67f,430f,if(vehicleRecord)30f else 43f,Color.WHITE,true)
         text(c,"···›",320f,415f,40f,Color.WHITE)
         text(c,"다음 등급은",420f,390f,20f,Color.WHITE)
-        text(c,if(state.levelName=="STARTER")"DRIVER" else "MASTER",420f,441f,28f,Color.WHITE,true)
+        text(c,if(vehicleRecord)"차근차근" else if(state.levelName=="STARTER")"DRIVER" else "MASTER",420f,441f,28f,Color.WHITE,true)
         val t=trip
         metric(c,520.67f,"DISTANCE","주행 거리",String.format(Locale.KOREA,"%.3f",t?.distanceKm ?: 0f),"KM")
         metric(c,670.67f,"PLAY TIME","주행 시간",(((t?.endedAt ?: t?.startedAt ?: 0L)-(t?.startedAt ?: 0L))/1000).toString(),"SEC")
         box(c,67f,820.34f,619f,145f,Color.rgb(249,217,77),7f)
         text(c,"QUEST",108f,842f,28f,Color.rgb(125,29,32),true)
-        text(c,"완료 퀘스트",108f,892f,28f,Color.rgb(25,29,36))
+        text(c,if(vehicleRecord)"조건 충족 / 시도" else "완료 퀘스트",108f,892f,25f,Color.rgb(25,29,36))
         text(c,"$completed / $target",345f,850f,66f,Color.rgb(25,29,36),true)
-        text(c,"DEMO  |  시연용 가상 기록",69f,1003f,26f,Palette.cream)
+        text(c,recordSource,69f,1003f,26f,Palette.cream)
         box(c,790f,400f,810f,540f,Color.argb(243,255,255,255),36f)
         text(c,"차근차근, 오늘의 성장",835f,438f,44f,Palette.ink,true)
-        text(c,"이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)
+        text(c,if(vehicleRecord)"신호 조건 충족 $completed / $target" else "이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)
         val good=report?.goodPoints?.let(::JSONArray)
         text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(4,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,590f,29f)
         val next=report?.practicePoints?.let(::JSONArray)?.optString(0).orEmpty()
         text(c,next.take(35),835f,805f,27f)
-        text(c,"시연 기록은 실제 운전 실력 평가와 구분해요",835f,865f,24f,Color.rgb(101,106,128))
+        text(c,if(vehicleRecord)"신호 조건 기록이며 실제 차로 이동 검증은 별도예요" else "시연 기록은 실제 운전 실력 평가와 구분해요",835f,865f,24f,Color.rgb(101,106,128))
     }
     private fun metric(c: Canvas,y: Float,en: String,ko: String,value: String,unit: String) {
         box(c,67f,y,467f,104f,Color.rgb(255,246,222),5f)

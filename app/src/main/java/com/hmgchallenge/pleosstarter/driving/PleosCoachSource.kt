@@ -20,7 +20,7 @@ import ai.pleos.playground.vehicle.listener.TurnSignalStateListener
 
 /** Actual SDK 2.3.2 / 3.0.5 adapter. No synthesized live vehicle or maneuver values. */
 class PleosCoachSource(private val context: Context, callback: Listener,
-    private val observe: (ApiObservation) -> Unit = {}) {
+    private val observe: (ApiObservation) -> Unit = {},private val includeIndicator: Boolean=true) {
     interface Listener {
         fun onNavigation(right: Boolean, meters: Double?, description: String)
         fun onIndicator(value: Indicator)
@@ -59,7 +59,7 @@ class PleosCoachSource(private val context: Context, callback: Listener,
     fun start() {
         stop(); running = true
         val token = generation
-        connectNavigation(token); connectIndicator(token)
+        connectNavigation(token); if(includeIndicator)connectIndicator(token)
         handler.post(object : Runnable {
             override fun run() {
                 if (!running || token != generation) return
@@ -84,7 +84,7 @@ class PleosCoachSource(private val context: Context, callback: Listener,
         })
         handler.postDelayed({ post(token) {
             if (lastNavigationAt == 0L) listener.onStatus("내비", "안내 응답 없음 · 차량 내비에서 경로 안내를 시작해 주세요")
-            if (lastIndicatorAt == 0L) listener.onStatus("방향지시등", "유효한 상태 응답 없음 · 서비스/권한/지원 확인 필요")
+            if (includeIndicator && lastIndicatorAt == 0L) listener.onStatus("방향지시등", "유효한 상태 응답 없음 · 서비스/권한/지원 확인 필요")
         } }, 10_000)
     }
 

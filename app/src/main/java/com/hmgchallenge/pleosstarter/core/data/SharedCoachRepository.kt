@@ -95,17 +95,47 @@ class SharedCoachRepository(val database: TripDatabase) {
             dao.trip(id)?.let {dao.saveTrip(it.copy(distanceKm=distanceKm))}
         }.onFailure {lastError=it.message}}
     }
+    fun vehicleQuestBoard(source: String="VEHICLE")=io {
+        com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.decode(dao.snapshot("vehicle-quests:$source")?.value)
+    }
+    fun beginVehicleQuestTrip(id: String,at: Long,source: String): Boolean=write("vehicle-quests") {
+        require(source in setOf("VEHICLE","SIMULATION"))
+        dao.saveTrip(Trip(id,at,null,source,0f))
+        dao.saveSnapshot(AppSnapshot("trip:$id",JSONObject().put("runtime","vehicle-quest-v1")
+            .put("profile",if(source=="VEHICLE")"personal" else "test").put("source",source)
+            .put("lesson","VEHICLE_QUEST").put("status","ACTIVE").put("targetCount",0).toString(),at))
+    }
+    /** Attempt, board snapshot, queryable quest rows and feedback commit together. Event ID is retry-safe. */
+    fun recordVehicleQuestAttempt(id: String,tripId: String,source: String,attempt: com.hmgchallenge.pleosstarter.feature.quests.Attempt): Boolean=write("vehicle-quests") {
+        require(source in setOf("VEHICLE","SIMULATION") && dao.trip(tripId)?.source==source)
+        require(com.hmgchallenge.pleosstarter.feature.quests.QuestCatalog.find(attempt.questId)!=null)
+        val inserted=dao.saveEvent(CoachingEvent(id,tripId,"VEHICLE_QUEST_ATTEMPT",attempt.t,source,
+            com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.encodeAttempt(attempt)))
+        if(inserted!=-1L) {
+            val board=vehicleQuestBoard(source)
+            board.record(attempt)
+            dao.saveSnapshot(AppSnapshot("vehicle-quests:$source",com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.encode(board),attempt.t))
+            dao.saveQuests(com.hmgchallenge.pleosstarter.feature.quests.QuestCatalog.all.map {quest->
+                val p=board.progressOf(quest.questId)
+                Quest("vehicle:$source:${quest.questId}",quest.questId,quest.title,"차량 신호 조건 연습 · Lv.${p.level}",
+                    "VEHICLE_OBSERVATION",30,p.steps,"ACTIVE",attempt.t)
+            })
+            buildReport(tripId,attempt.t)
+        }
+    }
     fun endTrip(id: String,at: Long,distanceKm: Float,complete: Boolean): Boolean=write("trip") {
         dao.trip(id)?.let {dao.saveTrip(it.copy(endedAt=at,distanceKm=distanceKm))}
         val meta=dao.snapshot("trip:$id")?.value?.let(::JSONObject) ?: JSONObject()
         meta.put("status",if(complete)"COMPLETE" else "INTERRUPTED")
         dao.saveSnapshot(AppSnapshot("trip:$id",meta.toString(),at));buildReport(id,at)
     }
-    fun addNote(id: String,text: String,category: String,skill: String?,difficult: Boolean,at: Long=System.currentTimeMillis(),contextJson: String?=null): Boolean=write("note") {
-        val noteId="demo:"+UUID.randomUUID()
+    fun addNote(id: String,text: String,category: String,skill: String?,difficult: Boolean,at: Long=System.currentTimeMillis(),contextJson: String?=null,source: String="SIMULATION"): Boolean=write("note") {
+        require(source in setOf("SIMULATION","VEHICLE"))
+        val profile=if(source=="VEHICLE")"personal" else "demo"
+        val noteId="$profile:"+UUID.randomUUID()
         dao.saveNote(DrivingNote(noteId,id,at,text,category))
-        contextJson?.let {dao.saveEvent(CoachingEvent("$noteId:context",id,"NOTE_CONTEXT",at,"SIMULATION",JSONObject(it).put("noteId",noteId).toString()))}
-        if(difficult && skill!=null)dao.saveEvent(CoachingEvent(noteId,id,"DIFFICULTY",at,"SIMULATION",JSONObject().put("profile","demo").put("skill",skill).put("text",text).toString()))
+        contextJson?.let {dao.saveEvent(CoachingEvent("$noteId:context",id,"NOTE_CONTEXT",at,source,JSONObject(it).put("noteId",noteId).toString()))}
+        if(difficult && skill!=null)dao.saveEvent(CoachingEvent(noteId,id,"DIFFICULTY",at,source,JSONObject().put("profile",profile).put("skill",skill).put("text",text).toString()))
         dao.trip(id)?.endedAt?.let {buildReport(id,it)}
     }
     fun recordEvent(id: String,tripId: String,type: String,source: String,payload: String,at: Long): Boolean=write("event") {
@@ -126,7 +156,7 @@ class SharedCoachRepository(val database: TripDatabase) {
         dao.recentTrips(100).forEach {trip->
             val snapshot=dao.snapshot("trip:${trip.tripId}") ?: return@forEach
             val meta=JSONObject(snapshot.value)
-            if(meta.optString("runtime")=="product-v1" && meta.optString("status")=="ACTIVE") {
+            if(meta.optString("runtime") in setOf("product-v1","vehicle-quest-v1") && meta.optString("status")=="ACTIVE") {
                 dao.saveTrip(trip.copy(endedAt=trip.endedAt ?: at))
                 dao.saveSnapshot(snapshot.copy(value=meta.put("status","INTERRUPTED").toString(),updatedAt=at))
                 buildReport(trip.tripId,at)
@@ -149,8 +179,16 @@ class SharedCoachRepository(val database: TripDatabase) {
         val review=SpeedReview.analyze(samples.map {SpeedReview.Sample(it.t,it.speedKmh?.toDouble())})
         dao.clearSpeedEvents(id,"$id:speed:%");dao.saveSpeedEvents(review.mapIndexed {i,e->TripEvent("$id:speed:$i",id,e.type,e.at,1,e.delta.toFloat())})
         val good=practice.map {when(it.skill){"LANE_CHANGE"->"한 차로 이동 연습을 마쳤어요";"INTERSECTION"->"우회전 연습을 마쳤어요";"PARKING"->"후진 주차·정렬을 연습했어요";else->"${it.skill} 연습을 기록했어요"}}.toMutableList()
+        val attempts=dao.events(id).filter {it.type=="VEHICLE_QUEST_ATTEMPT"}.map {
+            com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.decodeAttempt(it.payload)
+        }
+        attempts.filter {it.success}.groupBy {it.questId}.forEach {(questId,records)->
+            val title=com.hmgchallenge.pleosstarter.feature.quests.QuestCatalog.find(questId)?.title.orEmpty()
+            good.add("$title 신호 조건을 ${records.size}회 충족했어요")
+        }
         if(notes.any {it.category=="STEERING"})good.add("핸들 따라하기에서 직접 목표를 맞췄어요")
         val next=notes.filter {it.rawText.startsWith("어려웠어요")}.map {it.rawText.removePrefix("어려웠어요 · ")}.toMutableList()
+        attempts.filterNot {it.success}.takeLast(3).forEach {next.add(it.result.message)}
         if(review.isNotEmpty())next.add("속도 변화가 컸던 ${review.size}개 구간을 당시 상황과 함께 돌아보세요")
         if(good.isEmpty())good.add("완료 전 기록이에요. 이어서 연습할 수 있어요")
         if(next.isEmpty())next.add("다음 연습에서는 도움을 한 단계 줄여볼 수 있어요")

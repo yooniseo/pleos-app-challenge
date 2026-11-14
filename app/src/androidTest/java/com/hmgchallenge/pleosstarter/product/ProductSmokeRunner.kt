@@ -19,12 +19,14 @@ import org.json.JSONObject
 import java.io.File
 
 /** Tests own a separate on-disk database. No user progress, prefs, or Virtual Console mutation. */
-class ProductSmokeRunner: Instrumentation() {
+class ProductSmokeRunner: VehicleQuestSmokeRunner() {
     private lateinit var output: File
     private var realTime=false
     private var focusedReal=false
-    override fun onCreate(arguments: Bundle?) {realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
+    private var vehicleQuests=false
+    override fun onCreate(arguments: Bundle?) {vehicleQuests=arguments?.getString("vehicle_quests")=="true";realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
     override fun onStart() {
+        if(vehicleQuests){runVehicleQuestValidation();return}
         val result=Bundle();var activity: ChageunActivity?=null
         val previous=SharedCoachRepository.testOverride
         val name="product-validation.db"
