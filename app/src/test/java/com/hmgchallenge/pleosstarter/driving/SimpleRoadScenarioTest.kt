@@ -38,7 +38,7 @@ class SimpleRoadScenarioTest {
     }
     @Test fun replayCompletesOneLaneBeforeTurningAndUsesValidRoadGeometry() {
         val s=SimpleRoadScenario(course());s.start();var sawLane=false;var sawTurn=false
-        repeat(1400){
+        repeat(3000){
             val before=s.distance;s.advance(50,null,false)
             assertTrue(s.distance>=before)
             val f=s.frame();assertTrue(f.position.valid && f.planned.all {it.valid})
@@ -104,7 +104,7 @@ class SimpleRoadScenarioTest {
         val b=BeginnerScenarioCoach.guidance(s,BeginnerStyle.VISUAL)
         val c=BeginnerScenarioCoach.guidance(s,BeginnerStyle.BRIEF)
         assertNotEquals(a.detail,b.detail);assertNotEquals(b.headline,c.headline)
-        repeat(1500){s.advance(50,null,false);assertTrue(s.steeringTarget.isFinite());assertTrue(kotlin.math.abs(s.steeringTarget)<=360)}
+        repeat(3000){s.advance(50,null,false);assertTrue(s.steeringTarget.isFinite());assertTrue(kotlin.math.abs(s.steeringTarget)<=360)}
     }
     @Test fun coachingUsesTurnsAndTimelyUnwindingInsteadOfDegreeNumbers() {
         assertEquals("반 바퀴",BeginnerScenarioCoach.turnAmount(180))
@@ -116,7 +116,7 @@ class SimpleRoadScenarioTest {
             val g=BeginnerScenarioCoach.guidance(s,BeginnerStyle.STEP_BY_STEP)
             assertFalse(g.headline.contains("°"));assertFalse(g.headline.contains("도 ·"))
             if(!s.complete && s.distance>s.endDistance-1) {
-                sawUnwind=true;assertTrue(g.headline.contains("풀어"));assertEquals(0,g.steering)
+                sawUnwind=true;assertTrue(g.headline.contains("가운데"));assertEquals(0,g.steering)
             }
         }
         assertTrue(sawUnwind)

@@ -83,13 +83,6 @@ class ProductIllustrations {
         c.drawPath(Path().apply {moveTo(15f,100f);lineTo(15f,44f);quadTo(15f,31f,29f,31f);lineTo(66f,31f)},p)
         c.drawLine(47f,11f,68f,31f,p);c.drawLine(47f,51f,68f,31f,p);p.style=Paint.Style.FILL;c.restore()
     }
-    fun steeringArrow(c: Canvas,x: Float,y: Float,w: Float,h: Float,angle: Double) {
-        if(abs(angle)<10)return
-        c.save();c.translate(if(angle<0)x+w else x,y);if(angle<0)c.scale(-1f,1f)
-        p.style=Paint.Style.STROKE;p.strokeWidth=h*.11f;p.strokeCap=Paint.Cap.ROUND;p.strokeJoin=Paint.Join.ROUND;p.color=Color.WHITE
-        c.drawPath(Path().apply {moveTo(0f,h*.75f);quadTo(w*.5f,-h*.15f,w*.95f,h*.7f);moveTo(w*.85f,h*.12f);lineTo(w*.96f,h*.73f);lineTo(w*.72f,h*.95f)},p)
-        p.style=Paint.Style.FILL;c.restore()
-    }
     fun tree(c: Canvas,x: Float,y: Float,w: Float,h: Float) {
         c.save();c.translate(x,y);c.scale(w/100,h/130)
         fill(Color.argb(20,30,53,65));c.drawOval(15f,113f,98f,129f,p)

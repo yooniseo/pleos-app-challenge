@@ -52,6 +52,7 @@ class PleosCoachVoice(context: Context, private val status: (String) -> Unit,
     fun speak(text: String) {
         if (!ready || released) { status("음성 서비스 미준비 · 화면에서 안내를 확인해 주세요"); return }
         next = text
+        observe(ApiObservation("COACH_SPEECH","REQUEST",mapOf("text" to text)))
         if (speaking) requestStop()
         else drain()
     }

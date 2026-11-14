@@ -24,6 +24,7 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
         box(c,58f,225f,300f,68f,Color.WHITE,16f)
         text(c,if(parking)"${s.parkingGear}단 · 후진·정렬" else if(s.laneDone || s.lesson==RoadLesson.TURN)"3차로 유지" else "오른쪽 1개 차로 이동",82f,237f,26f)
 
+        text(c,"깜빡이 입력 · "+(if(session.indicatorOverride==null)"SDK" else "시연")+" · "+when(s.indicator){Indicator.RIGHT->"오른쪽 ON";Indicator.LEFT->"왼쪽 ON";Indicator.OFF->"OFF";else->"미확인"},58f,595f,24f,Palette.ink,true)
         if(coachEnabled) {
             if(!parking && s.started && !s.complete && (s.turning || s.distance>=s.course.turnDistance-30)) {
                 box(c,510f,310f,775f,165f,Color.rgb(255,249,232),32f)
@@ -35,8 +36,8 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
             box(c,1120f,575f,535f,450f,Color.argb(244,255,255,255),32f)
             text(c,session.learning().label,1152f,600f,27f,Palette.purple,true)
             text(c,"시연 핸들 · 실제 조향량 아님",1152f,642f,21f,Color.rgb(107,112,135))
-            wheel.draw(c,1378f,784f,300f,g.steering.toDouble())
-            assets.steeringArrow(c,1280f,675f,195f,38f,g.steering.toDouble())
+            wheel.draw(c,1378f,774f,280f,g.steering.toDouble())
+            text(c,BeginnerScenarioCoach.steeringPosition(s.steeringTarget),1152f,883f,22f,Palette.purple,true)
             wrappedText(c,g.headline,1152f,910f,475f,29f,Palette.ink,true)
         }
         box(c,1430f,460f,225f,85f,Color.WHITE,42f)
@@ -52,7 +53,7 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
         text(c,"QUEST  $earned / $target",640f,919f,25f,Color.WHITE,true)
         text(c,if(parking)"후진 주차 마무리" else if(s.laneDone || s.lesson==RoadLesson.TURN)"조심히 우회전하기" else "한 차로씩 이동하기",640f,964f,30f,Color.WHITE,true)
         if(android.os.SystemClock.elapsedRealtime()<messageUntil) {
-            box(c,575f,515f,600f,96f,Palette.lime,35f);text(c,message,610f,537f,32f,Palette.ink,true)
+            box(c,575f,500f,1020f,120f,Palette.lime,35f);wrappedText(c,message,610f,522f,945f,29f,Palette.ink,true)
         }
         text(c,"DEMO · 경로·차로·핸들은 시연 값 | © OpenStreetMap contributors · OSRM",45f,1040f,22f,Color.rgb(68,74,95))
         session.error?.let {box(c,400f,500f,900f,135f,Color.rgb(255,231,217));text(c,"저장 실패 · 재개를 눌러 다시 시도해 주세요",430f,535f,31f)}

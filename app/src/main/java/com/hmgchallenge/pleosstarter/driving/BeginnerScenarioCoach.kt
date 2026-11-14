@@ -7,42 +7,34 @@ data class BeginnerGuidance(val headline: String,val detail: String,val checklis
                             val direction: String="가운데",val amount: String="유지")
 
 object BeginnerScenarioCoach {
+    fun steeringPosition(angle: Double): String {
+        if(abs(angle)<10)return "현재 핸들 · 가운데"
+        val side=if(angle>0)"오른쪽" else "왼쪽"
+        return when {
+            abs(angle)>=350->"현재 핸들 · $side 한 바퀴 위치"
+            abs(angle)>180->"현재 핸들 · $side 반 바퀴 이상"
+            else->"현재 핸들 · $side 조향 중"
+        }
+    }
     fun guidance(s: SimpleRoadScenario,style: BeginnerStyle): BeginnerGuidance {
         val angle=s.steeringTarget.roundToInt()
         val direction=if(angle< -9)"왼쪽" else if(angle>9)"오른쪽" else "가운데"
         val amount=turnAmount(angle)
-        val restoring=s.started && !s.complete && ((s.lesson in setOf(RoadLesson.COMBINED,RoadLesson.LANE) && s.distance in 27.0..42.0) ||
-            (s.lesson==RoadLesson.PARKING && s.distance>s.endDistance-3))
-        val action=when {
-            s.complete->"잘했어요! 핸들을 가운데로 맞추고 마무리해요"
-            restoring && s.lesson==RoadLesson.PARKING->"차가 곧아졌어요. 핸들을 빠르게 풀어 가운데로!"
-            restoring->"차가 차로에 맞춰져요. 핸들을 풀어 가운데로!"
-            abs(angle)<10->"핸들을 가운데 두고 천천히 가세요"
-            else->steeringAction(angle)
+        val cue=ScenarioCoachingCues.at(s)
+        val checklist=if(s.lesson==RoadLesson.PARKING)
+            "위치 맞춤 → 정차·주변 확인 → 오른쪽 조향·후진 → 왼쪽 조향·정렬 → 가운데"
+            else "깜빡이·주변 확인 → 조향 → 나란하게 맞추기 → 핸들 가운데"
+        val headline=when(style) {
+            BeginnerStyle.VISUAL->cue.action
+            BeginnerStyle.BRIEF->cue.brief
+            else->cue.full
         }
-        val detail=when {
-            s.complete->"잘했어요. 완료한 동작을 퀘스트에 기록했어요"
-            !s.started->"시작하면 핸들 방향과 확인 순서를 보여드려요"
-            s.lesson==RoadLesson.PARKING && s.distance<5->"주차칸 옆에 여유를 두고 천천히 전진해요"
-            s.lesson==RoadLesson.PARKING && s.parkingWaitMs<2000->"완전히 멈춘 뒤, 미러와 뒤쪽을 확인해요"
-            s.lesson==RoadLesson.PARKING->"작게 후진하고, 차가 곧아지면 핸들을 풀어요"
-            !s.laneDone && s.lesson!=RoadLesson.TURN->"깜빡이 → 미러 → 사각지대 → 한 차로씩 이동"
-            s.turning->"앞·옆을 확인하고, 회전 후 핸들을 풀어요"
-            else->"목표 차로 유지 · 보행자와 전방을 직접 확인해요"
+        val detail=when(style) {
+            BeginnerStyle.VISUAL->"핸들 그림의 방향과 차량이 나란해지는 모습을 함께 확인해요"
+            BeginnerStyle.BRIEF->cue.action
+            else->cue.full
         }
-        val checklist=when {
-            s.lesson==RoadLesson.PARKING->"위치 맞춤 → 정차·주변 확인 → 후진 → 정렬"
-            s.turning->"주변 확인 → 천천히 회전 → 핸들 복원"
-            s.laneDone || s.lesson==RoadLesson.TURN->"3차로 유지 → 전방 확인 → 우회전 준비"
-            else->"깜빡이 → 미러·사각지대 → 한 차로 이동"
-        }
-        val stable=ScenarioCoachingCues.at(s)
-        return BeginnerGuidance(when(style){BeginnerStyle.VISUAL->stable.action;BeginnerStyle.BRIEF->stable.brief;else->stable.full},
-            when(style) {
-                BeginnerStyle.BRIEF->action
-                BeginnerStyle.VISUAL->if(restoring)"그림처럼 핸들을 풀어 가운데에 맞춰요" else if(!s.started)detail else "그림처럼 돌리고, 차가 곧아지면 핸들을 풀어요"
-                else->detail
-            },checklist,angle,if(restoring)"가운데로" else direction,if(restoring)"풀어주세요" else if(abs(angle) in 10..180)"꺾어주세요" else amount)
+        return BeginnerGuidance(headline,detail,checklist,angle,direction,amount)
     }
     fun steeringAction(angle: Int): String {
         val direction=if(angle<0)"왼쪽" else "오른쪽"

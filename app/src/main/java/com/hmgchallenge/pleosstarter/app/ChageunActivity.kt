@@ -76,8 +76,9 @@ class ChageunActivity: Activity() {
         override fun run() {
             if(!active)return
             val now=SystemClock.elapsedRealtime();session.tick(now-lastTick,now,telemetry.speedMps,telemetry.fresh);lastTick=now
+            session.updateIndicator(telemetry.indicator)
             val s=session.scenario
-            map?.setFrame(s.course,s.frame(),s.lesson==RoadLesson.PARKING)
+            if(screen!=AppScreen.PARKING || s.lesson==RoadLesson.PARKING)map?.setFrame(s.course,s.frame(),s.lesson==RoadLesson.PARKING)
             (canvas as? DriveCanvas)?.apply {coachEnabled=coach;message=milestoneText;messageUntil=milestoneUntil}
             (canvas as? QuestCanvas)?.apply {state=session.quest;points=this@ChageunActivity.points}
             canvas?.invalidate()
@@ -103,7 +104,13 @@ class ChageunActivity: Activity() {
                 layers.addView(map,FrameLayout.LayoutParams(-1,-1));layers.addView(canvas,FrameLayout.LayoutParams(-1,-1));layers
             }
             AppScreen.QUESTS->QuestCanvas(this,art).also {canvas=it;it.state=session.quest;it.points=points}
-            AppScreen.PARKING->ParkingCanvas(this,art,session).also {canvas=it}
+            AppScreen.PARKING->{
+                val layers=FrameLayout(this)
+                val s=session.scenario.takeIf {it.lesson==RoadLesson.PARKING} ?: SimpleRoadScenario(session.course,RoadLesson.PARKING)
+                map=ScenarioRoadMapView(this,art).apply {setFrame(s.course,s.frame(),true)}
+                canvas=ParkingCanvas(this,art,session)
+                layers.addView(map,FrameLayout.LayoutParams(-1,-1));layers.addView(canvas,FrameLayout.LayoutParams(-1,-1));layers
+            }
             AppScreen.FEEDBACK->{
                 val layers=FrameLayout(this)
                 val bg=ScenarioRoadMapView(this,art).apply {setFrame(session.scenario.course,session.scenario.frame())}
@@ -126,6 +133,10 @@ class ChageunActivity: Activity() {
                 startButton=scene.button("자동 시연 시작","replay_start",75f,945f,285f,65f,true){start()}
                 pauseButton=scene.button("일시정지","replay_pause",380f,945f,160f,65f){session.pause();voice?.stop()}
                 scene.button("연습 선택","lesson_select",45f,330f,260f,80f){chooseLesson()}
+                scene.button("깜빡이 OFF","indicator_off",45f,430f,245f,65f){setIndicator(Indicator.OFF)}
+                scene.button("오른쪽 ON","indicator_right",305f,430f,245f,65f){setIndicator(Indicator.RIGHT)}
+                scene.button("SDK 입력","indicator_live",45f,510f,245f,65f){setIndicator(null)}
+                scene.button("비교 안내 듣기","indicator_preview",305f,510f,245f,65f){previewIndicator()}
                 scene.button("설명 더 보기","coach_help",1320f,1040f,335f,65f){help()}
             }
             AppScreen.QUESTS->{
@@ -159,6 +170,19 @@ class ChageunActivity: Activity() {
         AppScreen.values().forEachIndexed {i,dest->scene.button(names[i],"tab_${dest.name}",25f+420*i,1100f,390f,70f,dest==screen){show(dest)}}
         setContentView(scene)
     }
+    fun setIndicator(value: Indicator?) {
+        session.indicatorOverride=value
+        session.updateIndicator(telemetry.indicator)
+        voice?.stop()
+        canvas?.invalidate()
+    }
+    fun previewIndicator() {
+        session.pause()
+        session.updateIndicator(telemetry.indicator)
+        val cue=ScenarioCoachingCues.preparation(CoachingStep.TURN_PREPARE,session.scenario.indicator)
+        milestoneText=cue.full;milestoneUntil=SystemClock.elapsedRealtime()+8000
+        if(voiceEnabled)voice?.speak(cue.full)
+    }
     private fun start() {
         if(emptyPreview){toast("연습 시나리오를 준비 중이에요");return}
         if(!session.start())toast(session.error ?: "저장 실패")
@@ -186,7 +210,7 @@ class ChageunActivity: Activity() {
                 1->{celebrationEnabled=!celebrationEnabled;saveSettings()}
                 2->AlertDialog.Builder(this).setTitle("설명 방식").setItems(BeginnerStyle.values().map {it.title}.toTypedArray()){_,n->session.manualStyle=BeginnerStyle.values()[n];saveSettings()}.show()
                 3->AlertDialog.Builder(this).setTitle("Pleos 연결 상태").setMessage("속도: ${if(telemetry.fresh)"${telemetry.speedMps} m/s" else "미수신/오래된 값"}\n방향지시등: ${telemetry.indicator}\n내비: ${telemetry.navigationStatus}\n음성: $voiceStatus\n축하: $celebrationStatus\n\n지도·차로·핸들은 시나리오 값입니다. 원시 차량 신호는 퀘스트 성공 판정으로 사용하지 않습니다.").setPositiveButton("확인",null).show()
-                4->AlertDialog.Builder(this).setTitle("지도 진행 속도").setItems(arrayOf("자동 재생 · 20/12km/h","차량 SDK 속도 · 경로는 가상")){_,n->select(session.scenario.lesson,if(n==0)ScenarioSpeed.REPLAY else ScenarioSpeed.VEHICLE)}.show()
+                4->AlertDialog.Builder(this).setTitle("지도 진행 속도").setItems(arrayOf("자동 재생 · 8/6km/h","차량 SDK 속도 · 경로는 가상")){_,n->select(session.scenario.lesson,if(n==0)ScenarioSpeed.REPLAY else ScenarioSpeed.VEHICLE)}.show()
             }}.setNegativeButton("닫기",null).show()
     }
     private fun saveSettings(){if(!repository.saveSnapshot("settings:product",JSONObject().put("coach",coach).put("voice",voiceEnabled).put("celebration",celebrationEnabled).put("style",session.manualStyle.name).toString()))toast("설정을 저장하지 못했어요")}

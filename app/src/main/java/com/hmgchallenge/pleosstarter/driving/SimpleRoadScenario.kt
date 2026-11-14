@@ -11,10 +11,11 @@ enum class RoadLesson(val title: String) {
 class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: RoadLesson = RoadLesson.COMBINED,
                          val source: ScenarioSpeed = ScenarioSpeed.REPLAY) {
     init {require(lesson!=RoadLesson.PARKING || source==ScenarioSpeed.REPLAY)}
-    val course=if(lesson==RoadLesson.PARKING)ParkingLessonGeometry.course() else roadCourse
+    val course=if(lesson==RoadLesson.PARKING)ParkingLessonGeometry.course() else roadCourse.rounded()
     val startDistance = if (lesson == RoadLesson.TURN) course.turnDistance - 25.0 else 0.0
     val endDistance = if (lesson == RoadLesson.LANE) 48.0 else course.length
     var distance = startDistance; private set
+    var indicator = Indicator.UNKNOWN
     var started = false; private set
     var speedMps = 0.0; private set
     var waitingForSpeed = false; private set
@@ -27,14 +28,14 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
     val progress get() = (distance-startDistance)/(endDistance-startDistance)
     fun start() { started = true }
     fun advance(elapsedMs: Long, vehicleMps: Double?, fresh: Boolean) {
-        if(lesson==RoadLesson.PARKING && started && distance>=5 && parkingWaitMs<2000) {
+        if(lesson==RoadLesson.PARKING && started && distance>=5 && parkingWaitMs<5000) {
             if(elapsedMs in 1..1000)parkingWaitMs+=elapsedMs
             speedMps=0.0;return
         }
         speedMps = when {
             !started || complete -> 0.0
             lesson==RoadLesson.PARKING -> if(distance<5)3.0/3.6 else 2.0/3.6
-            source == ScenarioSpeed.REPLAY -> if (distance >= course.turnDistance-8) 12.0/3.6 else 20.0/3.6
+            source == ScenarioSpeed.REPLAY -> if (distance >= course.turnDistance-8) 6.0/3.6 else 8.0/3.6
             fresh && vehicleMps != null && vehicleMps.isFinite() && vehicleMps >= 0 -> vehicleMps
             else -> 0.0
         }
@@ -51,7 +52,7 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
         complete -> "좋아요! ${lesson.title} 연습을 마쳤어요"
         !started -> "${lesson.title} 연습을 시작해요"
         lesson==RoadLesson.PARKING && distance<5 -> "주차칸 옆에 천천히 위치를 맞추세요"
-        lesson==RoadLesson.PARKING && parkingWaitMs<2000 -> "정차 · 뒤쪽과 양옆을 확인하는 단계예요"
+        lesson==RoadLesson.PARKING && parkingWaitMs<5000 -> "정차 · 뒤쪽과 양옆을 확인하는 단계예요"
         lesson==RoadLesson.PARKING && distance<endDistance-3 -> "R단 연습 · 핸들을 돌려 천천히 후진하세요"
         lesson==RoadLesson.PARKING -> "핸들을 가운데로 풀고 주차칸에 정렬하세요"
         waitingForSpeed -> "차량 속도 수신을 기다리고 있어요"
@@ -65,7 +66,7 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
     private fun laneOffset(d: Double): Double {
         if (lesson in setOf(RoadLesson.TURN,RoadLesson.PARKING) || d >= 42) return 0.0
         val t = ((d-12)/30).coerceIn(0.0,1.0)
-        return -3.5*(1-t*t*(3-2*t))
+        return -3.5*(1-t*t*t*(10-15*t+6*t*t))
     }
     fun frame(): NavigationSimulationFrame {
         fun point(d: Double) = NavigationSimulationRoute.offset(course.at(d),course.bearing(d),laneOffset(d))
@@ -84,10 +85,12 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
         val motion=Math.toDegrees(atan2((b.longitude-a.longitude)*cos(Math.toRadians(a.latitude)),b.latitude-a.latitude))
         return motion+if(lesson==RoadLesson.PARKING && d>=5)180 else 0
     }
+    val parkingCountersteerDistance get() = 5+(endDistance-8)/2
     /** Illustrative bicycle-model wheel animation: assumed 2.7m/14.5 ratio, never calibrated vehicle steering. */
-    val steeringTarget: Double get() {
-        if(!started || complete || (lesson==RoadLesson.PARKING && parkingWaitMs<2000 && distance>=5))return 0.0
-        val span=if(lesson==RoadLesson.PARKING)1.0 else 5.0
+    val steeringTarget: Double get() = if(!started || complete || (lesson==RoadLesson.PARKING && parkingWaitMs<5000 && distance>=5))0.0 else steeringAt(distance)
+    val steeringInstructions by lazy {SteeringCoachingTimeline(endDistance,lesson==RoadLesson.PARKING,::steeringAt)}
+    private fun steeringAt(distance: Double): Double {
+        val span=if(lesson==RoadLesson.PARKING).35 else .5
         val a=vehicleHeading((distance-span).coerceAtLeast(if(lesson==RoadLesson.PARKING && distance>=5)5.1 else 0.0))
         val b=vehicleHeading((distance+span).coerceAtMost(if(lesson==RoadLesson.PARKING && distance<5)4.9 else endDistance))
         val delta=(b-a+540)%360-180

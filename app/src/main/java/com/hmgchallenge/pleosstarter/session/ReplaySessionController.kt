@@ -34,6 +34,8 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
     private var finalized=false
     var manualStyle=BeginnerStyle.ADAPTIVE
     var coachingEnabled=true
+    var indicatorOverride: Indicator?=Indicator.OFF
+    fun updateIndicator(live: Indicator) { scenario.indicator=indicatorOverride ?: live }
     val skill get()=when(scenario.lesson) {
         RoadLesson.PARKING->CoachSkill.PARKING
         RoadLesson.LANE->CoachSkill.LANE_CHANGE

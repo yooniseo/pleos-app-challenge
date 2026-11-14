@@ -1,6 +1,6 @@
 package com.hmgchallenge.pleosstarter.driving
 
-/** Observations originate only inside SDK callbacks. A connection or empty list is not a value proof. */
+/** SDK callbacks and explicitly labelled speech requests. A request is never playback proof. */
 data class ApiObservation(
     val api: String,
     val kind: String,

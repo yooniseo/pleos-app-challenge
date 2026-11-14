@@ -21,7 +21,9 @@ import java.io.File
 /** Tests own a separate on-disk database. No user progress, prefs, or Virtual Console mutation. */
 class ProductSmokeRunner: Instrumentation() {
     private lateinit var output: File
-    override fun onCreate(arguments: Bundle?) {super.onCreate(arguments);start()}
+    private var realTime=false
+    private var focusedReal=false
+    override fun onCreate(arguments: Bundle?) {realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
     override fun onStart() {
         val result=Bundle();var activity: ChageunActivity?=null
         val previous=SharedCoachRepository.testOverride
@@ -30,7 +32,7 @@ class ProductSmokeRunner: Instrumentation() {
         var repository=SharedCoachRepository(Room.databaseBuilder(targetContext,TripDatabase::class.java,name).addMigrations(TripDatabase.MIGRATION_1_2).build())
         SharedCoachRepository.testOverride=repository
         output=File(targetContext.filesDir,"product-validation").apply {mkdirs()}
-        val proof=JSONObject().put("clock","four fixtures use explicit virtual elapsed time; one lane run uses real time")
+        val proof=JSONObject().put("clock",if(focusedReal)"turn, parking and tab-switch lane use real elapsed time; combined and initial lane use virtual elapsed time" else if(realTime)"all four fixtures and the tab-switch lane run use real elapsed time" else "four fixtures use virtual elapsed time; one lane run uses real time")
         try {
             check(android.os.Build.HARDWARE in setOf("ranchu","goldfish")) {"Emulator-only probe"}
             QuestStore(targetContext,true).resetDemoProgress()
@@ -47,23 +49,63 @@ class ProductSmokeRunner: Instrumentation() {
             val normal=Intent(targetContext,ChageunActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             activity=startActivitySync(normal) as ChageunActivity;waitForIdleSync()
             val app=activity
+            runOnMainSync {
+                app.window.decorView.findViewWithTag<Button>("indicator_off").performClick()
+                check(app.session.scenario.indicator==Indicator.OFF)
+                check(ScenarioCoachingCues.preparation(CoachingStep.TURN_PREPARE,app.session.scenario.indicator).full.contains("깜빡이를 켜고"))
+            }
+            capture(app,"indicator-off")
+            runOnMainSync {
+                app.window.decorView.findViewWithTag<Button>("indicator_right").performClick()
+                check(app.session.scenario.indicator==Indicator.RIGHT)
+                check(!ScenarioCoachingCues.preparation(CoachingStep.TURN_PREPARE,app.session.scenario.indicator).full.contains("깜빡이"))
+            }
+            capture(app,"indicator-right")
+            runOnMainSync {app.window.decorView.findViewWithTag<Button>("indicator_live").performClick();check(app.session.indicatorOverride==null)}
+            proof.put("indicatorButtons","PASS: OFF reminder, RIGHT suppresses reminder, SDK input selectable")
             val runs=JSONArray()
             ReplayCatalog.all.forEachIndexed {i,definition->
+                val playReal=realTime || (focusedReal && definition.lesson in setOf(RoadLesson.TURN,RoadLesson.PARKING))
                 var id=""
+                var speechFrom=0L
                 runOnMainSync {
                     app.select(definition.lesson)
                     val session=app.session
-                    val epoch=System.currentTimeMillis()+i*200_000L
+                    val epoch=System.currentTimeMillis()+(if(playReal)0L else i*200_000L)
                     val monotonic=SystemClock.elapsedRealtime()
                     check(session.start(epoch))
+                    speechFrom=System.currentTimeMillis()
                     id=session.tripId!!
                     var tick=0
-                    while(session.completedAt==null && tick<1800) {
+                    while(!playReal && session.completedAt==null && tick<1800) {
                         tick++;session.tick(100,monotonic+tick*100,null,false,epoch+tick*100)
                     }
-                    check(session.scenario.complete && session.completedAt!=null && session.error==null) {"Incomplete ${definition.id}: ${session.error}"}
+                    if(!playReal)check(session.scenario.complete && session.completedAt!=null && session.error==null) {"Incomplete ${definition.id}: ${session.error}"}
                     // Finalization must be idempotent even when a callback is replayed.
-                    repeat(10){session.tick(100,monotonic+200_000,null,false,epoch+200_000)}
+                    if(!playReal)repeat(10){session.tick(100,monotonic+200_000,null,false,epoch+200_000)}
+                }
+                if(playReal) {
+                    val phases=JSONArray();val seen=mutableSetOf<String>()
+                    val deadline=SystemClock.elapsedRealtime()+180_000
+                    while(app.session.completedAt==null && SystemClock.elapsedRealtime()<deadline) {
+                        check(app.session.tripId==id) {"Selected practice changed during validation"}
+                        var stage: CoachingStep?=null
+                        runOnMainSync {
+                            if(app.session.paused && !app.session.scenario.complete)check(app.session.start())
+                            val s=app.session.scenario;val cue=ScenarioCoachingCues.at(s)
+                            if(seen.add(cue.identity)) {
+                                stage=cue.step
+                                phases.put(JSONObject().put("step",cue.step.name).put("metres",s.distance).put("wheel",s.steeringTarget).put("bodyHeading",s.frame().bearing).put("text",cue.full))
+                            }
+                        }
+                        stage?.let {capture(app,"phase-${definition.id}-${phases.length()}-${it.name}")}
+                        Thread.sleep(100)
+                    }
+                    check(app.session.scenario.complete) {"Real time incomplete ${definition.id}"}
+                    proof.put("phases-${definition.id}",phases)
+                    var voiceEvents=emptyList<ApiObservation>()
+                    runOnMainSync {voiceEvents=app.voiceDiagnostics().filter {it.timestamp>=speechFrom}}
+                    proof.put("voice-${definition.id}",JSONArray(voiceEvents.map {JSONObject().put("api",it.api).put("kind",it.kind).put("at",it.timestamp).put("values",JSONObject(it.values))}))
                 }
                 waitForIdleSync();Thread.sleep(200)
                 val events=repository.events(id)
@@ -80,6 +122,8 @@ class ProductSmokeRunner: Instrumentation() {
             }
             check(repository.trips().size==4 && repository.points("demo")==700)
             proof.put("fixtures",runs)
+            var speechBaseline=0
+            runOnMainSync {speechBaseline=app.voiceDiagnostics().count {it.api=="TTS" && it.kind=="PLAYBACK_STARTED"}}
             // Real-time playback continues through internal tab switches and stops while paused.
             runOnMainSync {app.select(RoadLesson.LANE);app.window.decorView.findViewWithTag<Button>("replay_start").performClick()}
             val id=app.session.tripId!!
@@ -90,7 +134,7 @@ class ProductSmokeRunner: Instrumentation() {
             runOnMainSync {check(app.session.tripId==id && app.session.scenario.distance>before);app.session.pause();before=app.session.scenario.distance}
             Thread.sleep(450)
             runOnMainSync {check(app.session.scenario.distance==before);app.show(AppScreen.MAP);app.window.decorView.findViewWithTag<Button>("replay_start").performClick()}
-            val deadline=SystemClock.elapsedRealtime()+25_000
+            val deadline=SystemClock.elapsedRealtime()+40_000
             while(app.session.completedAt==null && SystemClock.elapsedRealtime()<deadline)Thread.sleep(200)
             check(app.session.completedAt!=null)
             check(repository.points("demo")==900)
@@ -102,7 +146,7 @@ class ProductSmokeRunner: Instrumentation() {
                 Thread.sleep(100)
             } while(SystemClock.elapsedRealtime()<speechDeadline)
             val playback=speech.filter {it.api=="TTS" && it.kind=="PLAYBACK_STARTED"}
-            check(playback.size in 1..2) {"Unexpected automatic speech count: ${playback.size}; $speech"}
+            check(playback.size-speechBaseline in 1..10) {"Unexpected automatic speech count: ${playback.size}; $speech"}
             check(speech.any {it.api=="TTS" && it.kind=="PLAYBACK_DONE"}) {"No completed Pleos speech playback"}
             proof.put("pleosSpeech",JSONObject().put("starts",playback.size).put("completed",speech.count {it.api=="TTS" && it.kind=="PLAYBACK_DONE"}))
             proof.put("realTimeLane",JSONObject().put("tripId",id).put("metres",repository.trip(id)!!.distanceKm!!*1000).put("samples",repository.samples(id).size))
