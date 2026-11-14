@@ -4,6 +4,10 @@
     <uses-permission android:name="pleos.car.permission.CAR_SAFETY" />
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
     <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_MAP" />
+    <uses-permission android:name="pleos.car.permission.STT_SERVICE" />
+    <!-- 연습 퀘스트: 방향지시등(CAR_LIGHTS), 앞바퀴 조향각·브레이크 페달(CAR_DRIVE) -->
+    <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" />
+    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
     <uses-feature android:name="android.hardware.type.automotive" android:required="false" />
 
     <application
@@ -11,18 +15,12 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity android:name=".quests.QuestActivity" android:exported="true"
-            android:label="@string/quest_app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".feature.quests.QuestActivity" android:exported="false" />
     </application>
 </manifest>
