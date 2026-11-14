@@ -61,7 +61,6 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
             assets.figma?.draw(c,"coach_off_avatar",RectF(162f,665f,228f,731f));c.restore()
         }
         arrival(c,hud)
-        if(!s.started)text(c,"출발을 누르면 자동으로 움직여요",610f,675f,29f,Palette.ink,true)
         val earned=session.quest.evidence.filter {it.tripId==session.tripId}.map {it.skill}.distinct().size
         val target=if(session.selectedLesson==RoadLesson.COMBINED)6 else 1
         if(compactQuestBanner) {
