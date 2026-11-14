@@ -21,6 +21,7 @@ class ChageunActivity: Activity() {
     lateinit var session: ReplaySessionController; private set
     lateinit var vehicleQuests: VehicleQuestController;private set
     private var vehicleQuestView=false
+    private var recommendView=false
     private var pendingVehicleSpeech: String?=null
     private lateinit var art: ProductIllustrations
     private lateinit var telemetry: VehicleTelemetry
@@ -121,7 +122,8 @@ class ChageunActivity: Activity() {
                 canvas=DriveCanvas(this,art,session).apply {coachEnabled=coach}
                 layers.addView(map,FrameLayout.LayoutParams(-1,-1));layers.addView(canvas,FrameLayout.LayoutParams(-1,-1));layers
             }
-            AppScreen.QUESTS->if(vehicleQuestView)VehicleQuestCanvas(this,art,vehicleQuests).also {canvas=it;it.input=telemetry.questInput()}
+            AppScreen.QUESTS->if(recommendView)RecommendationCanvas(this,art).also {canvas=it;it.result=repository.recommendations("VEHICLE")}
+                else if(vehicleQuestView)VehicleQuestCanvas(this,art,vehicleQuests).also {canvas=it;it.input=telemetry.questInput()}
                 else QuestCanvas(this,art).also {canvas=it;it.state=session.quest;it.points=points}
             AppScreen.PARKING->{
                 val layers=FrameLayout(this)
@@ -136,6 +138,7 @@ class ChageunActivity: Activity() {
                 val id=selectedTrip ?: session.tripId ?: repository.trips().firstOrNull {it.endedAt!=null}?.tripId
                 val feedback=CompletionCanvas(this,art).apply {
                     trip=id?.let(repository::trip);report=id?.let(repository::report);state=session.quest
+                    scores=id?.let(repository::scores)
                     complete=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)?.optString("status")=="COMPLETE" && repository.events(id).any {it.type=="PRACTICE_REWARD" && JSONObject(it.payload).optString("skill")=="PARKING"}
                     earned=id?.let(repository::tripPoints) ?: 0
                     completed=id?.let {repository.events(it).count {e->e.type=="PRACTICE_REWARD"}} ?: 0
@@ -166,9 +169,13 @@ class ChageunActivity: Activity() {
                 scene.button("설명 더 보기","coach_help",1320f,1040f,335f,65f){help()}
             }
             AppScreen.QUESTS->{
-                scene.button("시연 퀘스트","quests_demo",70f,228f,270f,52f,!vehicleQuestView){vehicleQuestView=false;show(AppScreen.QUESTS)}
-                scene.button("차량 신호 퀘스트","quests_vehicle",355f,228f,350f,52f,vehicleQuestView){vehicleQuestView=true;show(AppScreen.QUESTS)}
-                if(vehicleQuestView) {
+                scene.button("시연 퀘스트","quests_demo",70f,228f,270f,52f,!vehicleQuestView && !recommendView){vehicleQuestView=false;recommendView=false;show(AppScreen.QUESTS)}
+                scene.button("차량 신호 퀘스트","quests_vehicle",355f,228f,350f,52f,vehicleQuestView && !recommendView){vehicleQuestView=true;recommendView=false;show(AppScreen.QUESTS)}
+                scene.button("맞춤 추천","quests_recommend",720f,228f,270f,52f,recommendView){recommendView=true;show(AppScreen.QUESTS)}
+                if(recommendView) {
+                    // 추천 화면은 읽기 전용. 차량 신호 퀘스트 추천은 해당 탭에서 바로 이어서 연습할 수 있다.
+                    scene.button("차량 신호 퀘스트로","recommend_to_vehicle",1240f,960f,360f,68f,true){vehicleQuestView=true;recommendView=false;show(AppScreen.QUESTS)}
+                }else if(vehicleQuestView) {
                     scene.button(if(vehicleQuests.enabled)"주행 기록 마치기" else "차량 연결 시작","vehicle_finish",1240f,940f,360f,68f,true){
                         if(!vehicleQuests.enabled){vehicleQuests.resume();show(screen)}else {
                             val id=vehicleQuests.tripId
@@ -214,6 +221,7 @@ class ChageunActivity: Activity() {
                     }else if(session.tripId==null || (selectedTrip!=null && selectedTrip!=session.tripId))toast("현재 연습을 시작한 뒤 메모할 수 있어요")
                     else memo=DrivingMemoDialog(this,{text,category,difficult->session.memo(text,category,difficult)},{memo=null;show(screen)}).also {it.show("OTHER")}
                 }
+                scene.button("맞춤 퀘스트","feedback_recommend",1010f,970f,290f,90f){recommendView=true;show(AppScreen.QUESTS)}
                 scene.button("다음 연습","feedback_next",1320f,970f,280f,90f,true){chooseLesson()}
             }
         }
