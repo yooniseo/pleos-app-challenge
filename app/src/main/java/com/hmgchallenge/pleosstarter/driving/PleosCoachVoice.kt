@@ -20,6 +20,8 @@ class PleosCoachVoice(context: Context, private val status: (String) -> Unit,
     private var speaking = false
     private var stopping = false
     private var next: String? = null
+    val isReady get()=ready && !released
+    val isBusy get()=speaking || stopping
     private val events = object : EventListener {
         override fun onReady() = Unit
         override fun onStart() = post { observe(ApiObservation("TTS","PLAYBACK_STARTED"));speaking = true; status("Pleos 음성 안내 중") }

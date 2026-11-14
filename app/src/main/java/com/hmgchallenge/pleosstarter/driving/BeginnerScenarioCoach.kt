@@ -36,15 +36,8 @@ object BeginnerScenarioCoach {
             s.laneDone || s.lesson==RoadLesson.TURN->"3차로 유지 → 전방 확인 → 우회전 준비"
             else->"깜빡이 → 미러·사각지대 → 한 차로 이동"
         }
-        val coaching=when {
-            !s.started || s.complete || s.waitingForSpeed->s.cue()
-            s.lesson==RoadLesson.PARKING && s.distance<5->"핸들 가운데 두고 주차칸 옆으로 조금 더 가세요"
-            s.lesson==RoadLesson.PARKING && s.parkingWaitMs<2000->"여기서 정차! 미러와 뒤쪽을 확인해 주세요"
-            restoring || s.turning || (s.lesson==RoadLesson.PARKING && s.distance>=5)->action
-            s.lesson!=RoadLesson.TURN && s.distance>=12 && !s.laneDone->action
-            else->s.cue()
-        }
-        return BeginnerGuidance(when(style){BeginnerStyle.VISUAL->if(s.started && !s.complete && !s.waitingForSpeed)action else s.cue();BeginnerStyle.BRIEF->if(!s.started || s.complete || s.waitingForSpeed)s.cue() else if(restoring)"핸들 가운데로 풀어주세요" else if(s.lesson==RoadLesson.PARKING)"가상 ${s.parkingGear}단 · ${steeringAction(angle)}" else "${s.currentLane}차로 · ${steeringAction(angle)}";else->coaching},
+        val stable=ScenarioCoachingCues.at(s)
+        return BeginnerGuidance(when(style){BeginnerStyle.VISUAL->stable.action;BeginnerStyle.BRIEF->stable.brief;else->stable.full},
             when(style) {
                 BeginnerStyle.BRIEF->action
                 BeginnerStyle.VISUAL->if(restoring)"그림처럼 핸들을 풀어 가운데에 맞춰요" else if(!s.started)detail else "그림처럼 돌리고, 차가 곧아지면 핸들을 풀어요"

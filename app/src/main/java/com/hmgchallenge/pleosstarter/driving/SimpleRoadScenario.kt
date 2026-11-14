@@ -84,6 +84,7 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
         val motion=Math.toDegrees(atan2((b.longitude-a.longitude)*cos(Math.toRadians(a.latitude)),b.latitude-a.latitude))
         return motion+if(lesson==RoadLesson.PARKING && d>=5)180 else 0
     }
+    /** Illustrative bicycle-model wheel animation: assumed 2.7m/14.5 ratio, never calibrated vehicle steering. */
     val steeringTarget: Double get() {
         if(!started || complete || (lesson==RoadLesson.PARKING && parkingWaitMs<2000 && distance>=5))return 0.0
         val span=if(lesson==RoadLesson.PARKING)1.0 else 5.0

@@ -14,20 +14,11 @@
     <uses-permission android:name="pleos.car.permission.STT_SERVICE" />
     <uses-feature android:name="android.hardware.type.automotive" android:required="false" />
 
-    <application
-        android:allowBackup="false"
-        android:networkSecurityConfig="@xml/emulator_network_security"
-        android:label="@string/app_name"
-        android:supportsRtl="true"
+    <application android:allowBackup="false" android:usesCleartextTraffic="false"
+        android:label="@string/app_name" android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity android:name=".driving.DrivingSimulatorActivity" android:exported="false"
-            android:taskAffinity="com.hmgchallenge.pleosstarter.drivertraining"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout" android:label="@string/app_name" />
-        <activity android:name=".quests.QuestActivity" android:exported="true"
-            android:label="@string/quest_app_name" />
-        <activity android:name=".driving.PracticeRecordsActivity" android:exported="false"
-            android:label="@string/app_name" />
-        <activity android:name=".driving.DrivingCoachActivity" android:exported="true"
+        <activity android:name=".app.ChageunActivity" android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:label="@string/app_name">
             <intent-filter>
@@ -35,6 +26,5 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".MainActivity" android:exported="true" />
     </application>
 </manifest>

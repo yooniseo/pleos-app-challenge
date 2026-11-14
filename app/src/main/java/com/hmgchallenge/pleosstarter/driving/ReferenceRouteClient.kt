@@ -27,7 +27,7 @@ class ReferenceRouteClient(context: Context,private val endpoint: String="https:
                     val connection=URL("$endpoint/route/v1/driving/$coordinates?steps=true&geometries=geojson&overview=full").openConnection() as HttpURLConnection
                     try {
                         connection.connectTimeout=8_000;connection.readTimeout=12_000
-                        connection.setRequestProperty("User-Agent",CoachMapView.USER_AGENT)
+                        connection.setRequestProperty("User-Agent","Chageun/0.3 (Pleos educational route preview)")
                         check(connection.responseCode==200) {"경로 서비스 응답 ${connection.responseCode}"}
                         connection.inputStream.bufferedReader().use {it.readText()}.also {parse(it);cache.writeText(it)}
                     } finally {connection.disconnect()}

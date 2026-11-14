@@ -14,9 +14,9 @@ android {
         applicationId = "com.hmgchallenge.pleosstarter"
         minSdk = 28
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
-        testInstrumentationRunner = "com.hmgchallenge.pleosstarter.driving.CoachSmokeRunner"
+        versionCode = 3
+        versionName = "0.3.0"
+        testInstrumentationRunner = "com.hmgchallenge.pleosstarter.product.ProductSmokeRunner"
     }
 
     compileOptions {
@@ -27,7 +27,6 @@ android {
 }
 
 dependencies {
-    implementation("com.caverock:androidsvg-aar:1.4")
     implementation("ai.pleos.playground:Vehicle:2.3.2")
     implementation("ai.pleos.playground:NaviHelper:3.0.5")
     // Driving coach speech; ON_DEVICE avoids server registration and project secrets.

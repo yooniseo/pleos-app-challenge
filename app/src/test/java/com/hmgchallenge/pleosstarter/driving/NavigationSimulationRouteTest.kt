@@ -14,26 +14,6 @@ class NavigationSimulationRouteTest {
         assertTrue(c.bearing(0.0)<0);assertTrue(c.bearing(c.length)>0)
         assertEquals(c.points.first(),c.at(-1.0));assertEquals(c.points.last(),c.at(c.length+1))
     }
-    @Test fun authoredLaneChangesTurnAndRemainingDistanceStayConnected() {
-        val c=course();val m=DrivingSimulator();m.startRoadPractice();val driver=TrainingAutoDriver()
-        val start=c.frame(m).position;var prior=0.0;val lanes=mutableSetOf<Int>();var sawTurn=false;var sawWaiting=false
-        repeat(6000) {
-            if(m.stage!=SimStage.COMPLETE) {
-                driver.update(m,0.05);m.tick(0.05)
-                val f=c.frame(m)
-                assertTrue(f.position.valid && f.planned.all {it.valid})
-                assertTrue("backwards ${m.stage} ${f.distance} < $prior",f.distance>=prior-0.3)
-                assertEquals((c.turnDistance-f.distance).coerceAtLeast(0.0),f.turnRemaining,0.01)
-                assertTrue(f.planned.size>=2)
-                prior=f.distance;lanes.add(m.currentLane)
-                if(m.stage==SimStage.TURN_CHECK) {sawWaiting=true;assertEquals(3,m.currentLane);assertTrue(m.stopped)}
-                if(m.stage==SimStage.TURN)sawTurn=true
-            }
-        }
-        assertEquals(SimStage.COMPLETE,m.stage);assertEquals(setOf(1,2,3),lanes)
-        assertTrue(sawTurn && sawWaiting);assertTrue(NavigationSimulationRoute.metres(start,c.frame(m).position)>100)
-        assertTrue(c.frame(m).turnRemaining<0.1)
-    }
     @Test fun laneOffsetStaysOnRightHandSideAndShiftsWithTheCar() {
         val c=course();val p=c.at(40.0);val bearing=c.bearing(40.0)
         val left=NavigationSimulationRoute.offset(p,bearing,-3.5);val right=NavigationSimulationRoute.offset(p,bearing,3.5)

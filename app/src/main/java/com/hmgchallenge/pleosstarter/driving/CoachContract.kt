@@ -63,7 +63,7 @@ object UnconnectedFeedbackPort : FeedbackCoachPort {
     override fun onNote(note: FeedbackNoteDraft) = Unit
 }
 
-/** Install from the integrated app's host before opening DrivingCoachActivity. */
+/** Optional integration ports for a future validated live-vehicle coaching host. */
 object CoachHostBindings {
     var questPort: QuestCoachPort = UnconnectedQuestPort
     var feedbackPort: FeedbackCoachPort = UnconnectedFeedbackPort

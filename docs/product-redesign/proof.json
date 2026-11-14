@@ -1,0 +1,58 @@
+{
+  "clock": "four fixtures use explicit virtual elapsed time; one lane run uses real time",
+  "fixtures": [
+    {
+      "fixture": "road-combined-v1",
+      "tripId": "fe359d3e-9d84-4abe-b5b8-ba649c01bd57",
+      "metres": 192.31374,
+      "samples": 49,
+      "skills": [
+        "LANE_CHANGE",
+        "INTERSECTION"
+      ],
+      "points": 300
+    },
+    {
+      "fixture": "road-lane-v1",
+      "tripId": "65fc54fd-07c6-4788-afcb-5f3dd93d1702",
+      "metres": 48,
+      "samples": 9,
+      "skills": [
+        "LANE_CHANGE"
+      ],
+      "points": 200
+    },
+    {
+      "fixture": "road-turn-v1",
+      "tripId": "3e9f5f5d-b0bc-4744-816d-ec3bb3449d96",
+      "metres": 130.20137,
+      "samples": 37,
+      "skills": [
+        "INTERSECTION"
+      ],
+      "points": 100
+    },
+    {
+      "fixture": "parking-reverse-v1",
+      "tripId": "de343f91-c351-47ec-b3da-570c0fa93dd2",
+      "metres": 21.86505,
+      "samples": 39,
+      "skills": [
+        "PARKING"
+      ],
+      "points": 100
+    }
+  ],
+  "pleosSpeech": {
+    "starts": 2,
+    "completed": 1
+  },
+  "realTimeLane": {
+    "tripId": "49f6b687-2754-41b0-a79b-501653b0c209",
+    "metres": 48,
+    "samples": 9
+  },
+  "reopen": "PASS: 5 trips, 6 evidence, 900 points",
+  "reset": "PASS: current 0 points; previous reports\/rewards and personal state preserved",
+  "processRecovery": "PASS: interrupted trip closed, no completion or reward fabricated"
+}

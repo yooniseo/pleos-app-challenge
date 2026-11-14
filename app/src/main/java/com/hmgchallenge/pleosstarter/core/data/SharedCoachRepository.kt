@@ -58,6 +58,12 @@ class SharedCoachRepository(val database: TripDatabase) {
             val records=root.getJSONArray("evidence").objects().map {e->PracticeCompletion(
                 "$profile:${e.getString("id")}",profile,e.nullableString("tripId"),e.getString("skill"),e.getString("source"),e.getLong("at"),e.getBoolean("difficult"))}
             dao.clearCompletions(profile);dao.saveCompletions(records)
+            records.forEach { record ->
+                val points=PracticeRewards.points(record.skill)
+                if(points>0 && record.tripId!=null)dao.saveEvent(CoachingEvent(
+                    record.id+":reward",record.tripId,"PRACTICE_REWARD",record.at,record.source,
+                    JSONObject().put("points",points).put("skill",record.skill).put("profile",profile).toString()))
+            }
             records.forEach {e->e.tripId?.let {id->if(dao.trip(id)==null)dao.saveTrip(Trip(id,e.at,e.at,if(e.source=="SIMULATION")"REPLAY" else e.source,null))}}
             val stages=root.getJSONObject("stages");val quests=mutableListOf<Quest>()
             listOf("PREPARATION","LANE_CHANGE","INTERSECTION","SPEED","PARKING","FINISH").forEach {skill->
@@ -80,7 +86,7 @@ class SharedCoachRepository(val database: TripDatabase) {
 
     fun beginTrip(id: String,lesson: String,speedSource: String,at: Long): Boolean=write("trip") {
         dao.saveTrip(Trip(id,at,null,if(speedSource=="VEHICLE")"VEHICLE" else "REPLAY",0f))
-        dao.saveSnapshot(AppSnapshot("trip:$id",JSONObject().put("lesson",lesson).put("profile","demo").put("speedSource",speedSource).put("scenario",true).put("status","ACTIVE").toString(),at))
+        dao.saveSnapshot(AppSnapshot("trip:$id",JSONObject().put("lesson",lesson).put("profile","demo").put("speedSource",speedSource).put("scenario",true).put("runtime","product-v1").put("status","ACTIVE").toString(),at))
     }
     fun sample(id: String,t: Long,kmh: Float?,distanceKm: Float) {
         // Fire-and-forget only for telemetry; later state writes/readbacks queue behind this work.
@@ -112,6 +118,21 @@ class SharedCoachRepository(val database: TripDatabase) {
     fun previewReport(id: String): Boolean=write("report") {buildReport(id,System.currentTimeMillis())}
     fun events(id: String)=io {dao.events(id)}
     fun samples(id: String)=io {dao.samples(id)}
+    fun trip(id: String)=io {dao.trip(id)}
+    fun points(profile: String)=io {dao.rewards(profile).sumOf {JSONObject(it.payload).getInt("points")}}
+    fun tripPoints(id: String)=io {dao.events(id).filter {it.type=="PRACTICE_REWARD"}.sumOf {JSONObject(it.payload).getInt("points")}}
+    /** Reconcile this runtime's unfinished records after process death; never invent a completion. */
+    fun recoverInterruptedTrips(at: Long=System.currentTimeMillis()): Boolean=write("trip") {
+        dao.recentTrips(100).forEach {trip->
+            val snapshot=dao.snapshot("trip:${trip.tripId}") ?: return@forEach
+            val meta=JSONObject(snapshot.value)
+            if(meta.optString("runtime")=="product-v1" && meta.optString("status")=="ACTIVE") {
+                dao.saveTrip(trip.copy(endedAt=trip.endedAt ?: at))
+                dao.saveSnapshot(snapshot.copy(value=meta.put("status","INTERRUPTED").toString(),updatedAt=at))
+                buildReport(trip.tripId,at)
+            }
+        }
+    }
     fun questRows()=io {dao.questRows()}
     fun completions(profile: String,skill: String)=completions.filter {it.profile==profile && it.skill==skill}
     fun difficultyAt(profile: String,skill: String): Long= difficulty.firstOrNull {
