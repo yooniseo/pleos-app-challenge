@@ -19,14 +19,15 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
     private var frame: NavigationSimulationFrame?=null
     private var parking=false
     var showCautions=false
+    var tilted=true
     fun setFrame(route: NavigationSimulationRoute,value: NavigationSimulationFrame,parking: Boolean=false) {course=route;frame=value;this.parking=parking;invalidate()}
     fun diagnostics()=mapOf("visibleTiles" to "0","offlineRoads" to streets.size.toString(),"routePoints" to (course?.points?.size ?: 0).toString(),
-        "marker" to (frame?.position?.let {"${it.latitude},${it.longitude}"} ?: ""),"size" to "${width}x$height")
+        "marker" to (frame?.position?.let {"${it.latitude},${it.longitude}"} ?: ""),"size" to "${width}x$height","mode" to if(tilted)"3D" else "2D")
     override fun onDraw(c: Canvas) {
         c.drawColor(Color.rgb(239,240,246))
         val f=frame ?: return;val route=course ?: return
         if(parking){drawParking(c,f,route);return}
-        val yaw=Math.toRadians(route.bearing(0.0));val scale=width/76f
+        val yaw=Math.toRadians(route.bearing(0.0));val scale=width/76f;val projection=if(tilted).72f else 1f
         fun local(g: GeoPoint): PointF {
             val east=(g.longitude-f.position.longitude)*111320*cos(Math.toRadians(f.position.latitude))
             val north=(g.latitude-f.position.latitude)*111320
@@ -37,7 +38,7 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
             p.style=Paint.Style.STROKE;p.color=color;p.strokeWidth=width;p.strokeJoin=Paint.Join.ROUND;p.strokeCap=Paint.Cap.BUTT
             p.pathEffect=if(dash)DashPathEffect(floatArrayOf(3f,4f),0f)else null;c.drawPath(path,p);p.pathEffect=null
         }
-        c.save();c.translate(width*.52f,height*.70f);c.scale(scale,scale*.72f)
+        c.save();c.translate(width*.52f,height*.70f);c.scale(scale,scale*projection)
         areas.forEach {(pts,green)->p.style=Paint.Style.FILL;p.color=if(green)Color.rgb(202,220,208)else Color.rgb(224,226,236);c.drawPath(path(pts).apply {close()},p)}
         streets.forEach {s->stroke(path(s.points),Color.rgb(250,251,254),s.width+2.2f)}
         streets.forEach {s->stroke(path(s.points),Color.rgb(198,202,216),s.width)}
@@ -69,14 +70,14 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
         c.restore()
         if(showCautions && f.turnRemaining<=140 && f.distance<=route.turnDistance+30) {
             val warning=local(route.at(route.turnDistance+14))
-            val x=width*.52f+warning.x*scale;val y=height*.70f+warning.y*scale*.72f
+            val x=width*.52f+warning.x*scale;val y=height*.70f+warning.y*scale*projection
             val size=width*.075f
             art.figma?.draw(c,"warning_marker",RectF(x-size/2,y-size,x+size/2,y))
         }
         // Original app illustrations are anchored beside the road, and follow the geographic camera.
-        listOf(0.0 to -19.0,45.0 to 16.0,95.0 to -18.0,145.0 to 16.0).forEachIndexed {i,(d,offset)->
+        listOf(0.0 to -19.0,45.0 to 16.0,95.0 to -18.0,145.0 to 16.0).forEach {(d,offset)->
             val pos=local(NavigationSimulationRoute.offset(route.at(d),route.bearing(d),offset))
-            val x=width*.52f+pos.x*scale;val y=height*.70f+pos.y*scale*.72f
+            val x=width*.52f+pos.x*scale;val y=height*.70f+pos.y*scale*projection
             val w=width*.105f;val h=w*1.306f
             art.tree(c,x-w/2,y-h,w,h)
         }
@@ -84,9 +85,8 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
         val w=width*.085f;val h=w/1.047f
         art.car(c,RectF(-w/2,-h/2,w/2,h/2));c.restore()
         p.typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL);p.textSize=width*.018f;p.color=Color.rgb(94,100,121)
-        c.drawText("창룡대로",width*.76f,height*.82f,p)
-        p.textSize=width*.013f;p.color=Color.rgb(84,88,108)
-        c.drawText("© OpenStreetMap contributors · OSRM | 가상 차로·횡단보도",width*.02f,height*.982f,p)
+        // The host draws attribution in a reserved HUD slot, above the navigation tabs.
+        c.drawText(if(f.distance<route.turnDistance)"창룡대로" else "대학로",width*.40f,height*.61f,p)
     }
     private fun drawParking(c: Canvas,f: NavigationSimulationFrame,route: NavigationSimulationRoute) {
         c.drawColor(Color.rgb(229,232,241))

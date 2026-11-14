@@ -49,6 +49,90 @@
       "width": 150,
       "height": 150,
       "bytes": 4958
+    },
+    {
+      "file": "nav_turn.png",
+      "nodeId": "113:13047",
+      "width": 96,
+      "height": 133,
+      "bytes": 1105
+    },
+    {
+      "file": "nav_turn_next.png",
+      "nodeId": "113:13052",
+      "width": 58,
+      "height": 81,
+      "bytes": 577
+    },
+    {
+      "file": "nav_expand.png",
+      "nodeId": "113:13040",
+      "width": 35,
+      "height": 35,
+      "bytes": 831
+    },
+    {
+      "file": "map_pointer.png",
+      "nodeId": "113:13024",
+      "width": 19,
+      "height": 17,
+      "bytes": 327
+    },
+    {
+      "file": "map_settings.png",
+      "nodeId": "113:12812",
+      "width": 29,
+      "height": 30,
+      "bytes": 509
+    },
+    {
+      "file": "arrival_search.png",
+      "nodeId": "113:13137",
+      "width": 113,
+      "height": 60,
+      "bytes": 1524
+    },
+    {
+      "file": "progress_start.png",
+      "nodeId": "113:13133",
+      "width": 20,
+      "height": 20,
+      "bytes": 675
+    },
+    {
+      "file": "progress_current.png",
+      "nodeId": "113:13130",
+      "width": 20,
+      "height": 20,
+      "bytes": 716
+    },
+    {
+      "file": "arrival_handle.png",
+      "nodeId": "113:13114",
+      "width": 120,
+      "height": 5,
+      "bytes": 217
+    },
+    {
+      "file": "quest_flag_outline.png",
+      "nodeId": "130:12610",
+      "width": 67,
+      "height": 92,
+      "bytes": 1198
+    },
+    {
+      "file": "quest_chevron_dark.png",
+      "nodeId": "130:12549",
+      "width": 27,
+      "height": 48,
+      "bytes": 399
+    },
+    {
+      "file": "coach_off_avatar.png",
+      "nodeId": "130:12543",
+      "width": 63,
+      "height": 62,
+      "bytes": 8071
     }
   ],
   "export": "Figma Plugin API PNG, contentsOnly=true, useAbsoluteBounds=true; original file unchanged"

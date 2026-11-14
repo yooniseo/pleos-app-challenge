@@ -45,6 +45,12 @@ fun Instrumentation.runQuestDesignValidation() {
         check(QuestStore(targetContext,true).resetDemoProgress())
         repository.saveSnapshot("settings:product","{\"voice\":false,\"celebration\":false}")
         activity=launch();var app=requireNotNull(activity);waitForIdleSync()
+        listOf("arrival_search" to "짧은 자동 시연","route_steps" to "시연 경로 안내","settings" to "나에게 맞는 코치").forEach {(tag,title)->
+            onMain {app.window.decorView.findViewWithTag<Button>(tag).performClick()};waitForIdleSync()
+            check(uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText(title).isNotEmpty()) {"Missing dialog: $tag"}
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);waitForIdleSync()
+        }
+        proof.put("nativeControls","PASS: search opens practice selection, maneuver card opens route steps, settings opens coach preferences")
         val epoch=System.currentTimeMillis()
         repeat(6) {i->onMain {
             app.select(RoadLesson.LANE);check(app.session.start(epoch+i*200_000))
@@ -77,6 +83,18 @@ fun Instrumentation.runQuestDesignValidation() {
             check(app.session.quest.practiceCount(CoachSkill.PREPARATION)==1)
             check(!app.session.confirmChecklist(CoachSkill.FINISH,setOf(0,1,2)))
         }
+        waitForIdleSync();capture(app,"07-navigation-start")
+        onMain {
+            val trip=app.session.tripId;val distance=app.session.travelledMetres
+            app.window.decorView.findViewWithTag<Button>("map_view").performClick()
+            check(app.navigationDiagnostics()?.get("mode")=="2D")
+            check(app.session.tripId==trip && app.session.travelledMetres==distance)
+        }
+        waitForIdleSync();capture(app,"08-map-flat")
+        onMain {app.toggleMapView();app.toggleQuestBannerStyle()}
+        waitForIdleSync();capture(app,"09-compact-quest")
+        onMain {app.toggleQuestBannerStyle()}
+        proof.put("navigationControls","PASS: 2D/3D changes projection without restarting the trip; compact quest variant renders")
         var ticks=0
         while(app.session.completedAt==null && ticks<2400) {
             var captureApproach=false;var captureTurn=false
@@ -113,6 +131,18 @@ fun Instrumentation.runQuestDesignValidation() {
             check(CoachSkill.values().all {app.questDiagnostics()?.get(it.name)!!>0})
         }
         capture(app,"06-six-area-quest-board")
+        onMain {
+            app.select(RoadLesson.LANE);app.startPrepared()
+            val cancelled=app.session.tripId!!
+            app.session.tick(1000,SystemClock.elapsedRealtime()+1000,null,false)
+            app.window.decorView.findViewWithTag<Button>("route_cancel").performClick()
+            check(app.session.tripId==null && !app.session.scenario.started)
+            check(repository.trip(cancelled)?.endedAt!=null)
+            check(JSONObject(repository.snapshot("trip:$cancelled")!!).getString("status")=="INTERRUPTED")
+            check(repository.tripPoints(cancelled)==0)
+            check(repository.completedSkills(id).size==6 && repository.tripPoints(id)==600)
+        }
+        proof.put("routeCancel","PASS: partial trip ends as INTERRUPTED, no unearned reward, previous records preserved")
         onMain {app.finish()};waitForIdleSync();activity=null
         repository.close();repository=open();SharedCoachRepository.testOverride=repository
         check(repository.completedSkills(id).size==6 && repository.report(id)!=null)

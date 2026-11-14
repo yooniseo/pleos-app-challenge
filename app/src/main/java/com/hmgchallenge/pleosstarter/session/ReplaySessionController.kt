@@ -32,6 +32,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
     var selectedLesson=RoadLesson.COMBINED; private set
     private var roadMetres=0.0
     private var selectedSpeed=ScenarioSpeed.REPLAY
+    var totalTripMetres=scenario.endDistance-scenario.startDistance+ParkingLessonGeometry.course().length;private set
     val travelledMetres get()=roadMetres+scenario.distance-scenario.startDistance
     val continuingToParking get()=selectedLesson==RoadLesson.COMBINED && scenario.lesson==RoadLesson.COMBINED
     private var link: SimpleScenarioQuests?=null
@@ -58,6 +59,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
         if(!close())return false
         scenario=SimpleRoadScenario(course,lesson,if(lesson==RoadLesson.PARKING)ScenarioSpeed.REPLAY else source)
         selectedLesson=lesson;selectedSpeed=scenario.source;roadMetres=0.0
+        totalTripMetres=scenario.endDistance-scenario.startDistance+if(lesson==RoadLesson.COMBINED)ParkingLessonGeometry.course().length else 0.0
         tripId=null;link=null;paused=true;completedAt=null;lastKey="";finalized=false;error=null
         return true
     }
@@ -77,6 +79,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
     }
     fun togglePause() {if(scenario.started && !scenario.complete)paused=!paused}
     fun pause() {paused=true}
+    fun cancel()=select(selectedLesson,selectedSpeed)
     fun refresh() {quest=store.load()}
     fun tick(elapsedMs: Long, monotonic: Long, vehicleMps: Double?, fresh: Boolean, now: Long=System.currentTimeMillis()) {
         if(!scenario.started || finalized || paused)return

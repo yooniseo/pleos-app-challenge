@@ -45,6 +45,7 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
         text(c,if(vehicleRecord)"조건 충족 / 시도" else "완료 퀘스트",108f,892f,25f,Color.rgb(25,29,36))
         text(c,"$completed / $target",345f,850f,66f,Color.rgb(25,29,36),true)
         text(c,recordSource,69f,1003f,26f,Palette.cream)
+        text(c,"© OpenStreetMap contributors · OSRM",69f,1054f,18f,Palette.cream)
         box(c,790f,400f,810f,540f,Color.argb(243,255,255,255),36f)
         text(c,"차근차근, 오늘의 성장",835f,438f,44f,Palette.ink,true)
         text(c,if(vehicleRecord)"신호 조건 충족 $completed / $target" else "이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)

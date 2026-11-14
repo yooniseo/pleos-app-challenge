@@ -54,6 +54,7 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
             activity=startActivitySync(normal) as ChageunActivity;waitForIdleSync()
             val app=activity
             runOnMainSync {
+                app.openSimulationTools()
                 app.window.decorView.findViewWithTag<Button>("indicator_off").performClick()
                 check(app.session.scenario.indicator==Indicator.OFF)
                 check(ScenarioCoachingCues.preparation(CoachingStep.TURN_PREPARE,app.session.scenario.indicator).full.contains("깜빡이를 켜고"))
@@ -66,6 +67,7 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
             }
             capture(app,"indicator-right")
             runOnMainSync {app.window.decorView.findViewWithTag<Button>("indicator_live").performClick();check(app.session.indicatorOverride==null)}
+            runOnMainSync {app.openSimulationTools(false)}
             proof.put("indicatorButtons","PASS: OFF reminder, RIGHT suppresses reminder, SDK input selectable")
             val runs=JSONArray()
             ReplayCatalog.all.forEachIndexed {i,definition->

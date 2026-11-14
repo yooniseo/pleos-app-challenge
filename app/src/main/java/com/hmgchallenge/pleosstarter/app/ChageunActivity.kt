@@ -36,6 +36,10 @@ class ChageunActivity: Activity() {
     private var completionShown: String?=null
     private var points=0
     private var selectedTrip: String?=null
+    private var mapTilted=true
+    private var compactQuestBanner=false
+    private var toolsExpanded=false
+    private var cancelButton: Button?=null
     private var coach=true
     private var voiceEnabled=true
     private var celebrationEnabled=true
@@ -58,6 +62,7 @@ class ChageunActivity: Activity() {
         vehicleQuests=VehicleQuestController(this).also {controller->controller.onCue={pendingVehicleSpeech=it}}
         val settings=JSONObject(repository.snapshot("settings:product") ?: "{}")
         coach=settings.optBoolean("coach",true);voiceEnabled=settings.optBoolean("voice",true);celebrationEnabled=settings.optBoolean("celebration",true)
+        mapTilted=settings.optBoolean("mapTilted",true);compactQuestBanner=settings.optBoolean("compactQuestBanner",false)
         session.coachingEnabled=coach
         session.manualStyle=runCatching {BeginnerStyle.valueOf(settings.optString("style","ADAPTIVE"))}.getOrDefault(BeginnerStyle.ADAPTIVE)
         session.onMilestone={done->
@@ -95,6 +100,7 @@ class ChageunActivity: Activity() {
             startButton?.text=when {s.complete->"다시 시연";s.started && !session.paused->"진행 중";s.started->"재개";else->"자동 시연 시작"}
             startButton?.isEnabled=!emptyPreview && (!s.started || session.paused || s.complete)
             pauseButton?.isEnabled=s.started && !s.complete && !session.paused
+            cancelButton?.isEnabled=s.started && !s.complete
             if(session.completedAt!=null && completionShown!=session.tripId) {
                 completionShown=session.tripId;selectedTrip=session.tripId
                 if(s.lesson==RoadLesson.PARKING)show(AppScreen.FEEDBACK)
@@ -112,12 +118,12 @@ class ChageunActivity: Activity() {
     }
     fun show(destination: AppScreen) {
         if(destination==AppScreen.QUESTS)session.refresh()
-        screen=destination;startButton=null;pauseButton=null;map=null
+        screen=destination;startButton=null;pauseButton=null;cancelButton=null;map=null
         val drawing: android.view.View=when(destination) {
             AppScreen.MAP->{
                 val layers=FrameLayout(this)
-                map=ScenarioRoadMapView(this,art).apply {showCautions=true;setFrame(session.scenario.course,session.scenario.frame(),session.scenario.lesson==RoadLesson.PARKING)}
-                canvas=DriveCanvas(this,art,session).apply {coachEnabled=coach}
+                map=ScenarioRoadMapView(this,art).apply {tilted=mapTilted;showCautions=true;setFrame(session.scenario.course,session.scenario.frame(),session.scenario.lesson==RoadLesson.PARKING)}
+                canvas=DriveCanvas(this,art,session).apply {coachEnabled=coach;compactQuestBanner=this@ChageunActivity.compactQuestBanner;tilted=mapTilted;toolsExpanded=this@ChageunActivity.toolsExpanded}
                 layers.addView(map,FrameLayout.LayoutParams(-1,-1));layers.addView(canvas,FrameLayout.LayoutParams(-1,-1));layers
             }
             AppScreen.QUESTS->QuestCanvas(this,art).also {canvas=it;it.state=session.quest;it.points=points}
@@ -152,18 +158,25 @@ class ChageunActivity: Activity() {
         scene=ProductScene(this,drawing)
         when(destination) {
             AppScreen.MAP->{
-                scene.button("설정", "settings",1500f,160f,155f,78f){settings()}
+                scene.button("", "settings",1591f,157f,68f,68f){settings()}.apply {background=null;elevation=0f;contentDescription="코치 및 지도 설정"}
+                scene.button("","map_view",1591f,59f,68f,68f){toggleMapView()}.apply {background=null;elevation=0f;contentDescription="지도 ${if(mapTilted)"2D" else "3D"} 전환"}
+                scene.button("","route_steps",53f,59f,543f,186f){routeSteps()}.apply {background=null;elevation=0f;contentDescription="다음 안내 단계 보기"}
+                scene.button("","arrival_search",72f,931f,113f,60f){chooseLesson()}.apply {background=null;elevation=0f;contentDescription="시연 경로 찾기"}
+                cancelButton=scene.button("","route_cancel",220f,931f,356f,60f){cancelRoute()}.apply {background=null;elevation=0f;contentDescription="시연 경로 취소"}
                 scene.button("","coach_toggle",58f,650f,184f,93f){coach=!coach;session.coachingEnabled=coach;saveSettings();if(!coach)voice?.stop();show(screen)}.apply {
                     background=null;elevation=0f;contentDescription="주행 코치 ${if(coach)"켜짐" else "꺼짐"} 전환"
                 }
-                startButton=scene.button("자동 시연 시작","replay_start",75f,945f,285f,65f,true){start()}
-                pauseButton=scene.button("일시정지","replay_pause",380f,945f,160f,65f){session.pause();voice?.stop()}
-                scene.button("연습 선택","lesson_select",45f,330f,260f,80f){chooseLesson()}
-                scene.button("깜빡이 OFF","indicator_off",45f,430f,245f,65f){setIndicator(Indicator.OFF)}
-                scene.button("오른쪽 ON","indicator_right",305f,430f,245f,65f){setIndicator(Indicator.RIGHT)}
-                scene.button("SDK 입력","indicator_live",45f,510f,245f,65f){setIndicator(null)}
-                scene.button("비교 안내 듣기","indicator_preview",305f,510f,245f,65f){previewIndicator()}
-                scene.button("설명 더 보기","coach_help",1195f,620f,390f,60f){help()}
+                startButton=scene.button("자동 시연 시작","replay_start",53f,1025f,225f,60f,true){start()}
+                pauseButton=scene.button("일시정지","replay_pause",290f,1025f,140f,60f){session.pause();voice?.stop()}
+                scene.button("연습 선택","lesson_select",445f,1025f,150f,60f){chooseLesson()}
+                if(toolsExpanded) {
+                    scene.button("깜빡이 OFF","indicator_off",73f,447f,235f,60f){setIndicator(Indicator.OFF)}
+                    scene.button("오른쪽 ON","indicator_right",323f,447f,235f,60f){setIndicator(Indicator.RIGHT)}
+                    scene.button("SDK 입력","indicator_live",73f,521f,235f,60f){setIndicator(null)}
+                    scene.button("비교 안내 듣기","indicator_preview",323f,521f,235f,60f){previewIndicator()}
+                    scene.button("닫기","tools_close",463f,391f,110f,48f){openSimulationTools(false)}
+                }
+                if(coach)scene.button("설명 더 보기","coach_help",1195f,620f,390f,60f){help()}
                 scene.button("","map_quest_banner",1095f,905f,560f,170f){show(AppScreen.QUESTS)}.apply {
                     background=null;elevation=0f;contentDescription="이번 시연 퀘스트 진행도 보기"
                 }
@@ -219,6 +232,20 @@ class ChageunActivity: Activity() {
         val names=listOf("지도 · 주행 코치","퀘스트","주차 가이드","주행 피드백")
         AppScreen.values().forEachIndexed {i,dest->scene.button(names[i],"tab_${dest.name}",25f+420*i,1100f,390f,70f,dest==screen){show(dest)}}
         setContentView(scene)
+    }
+    fun openSimulationTools(open: Boolean=true) {toolsExpanded=open;show(AppScreen.MAP)}
+    fun toggleMapView() {mapTilted=!mapTilted;saveSettings();show(AppScreen.MAP)}
+    fun toggleQuestBannerStyle() {compactQuestBanner=!compactQuestBanner;saveSettings();show(AppScreen.MAP)}
+    fun navigationDiagnostics()=map?.diagnostics()
+    fun cancelRoute() {
+        voice?.stop()
+        if(session.cancel()) {selectedTrip=null;show(AppScreen.MAP);toast("경로를 취소했어요 · 지난 기록은 유지돼요")}
+        else toast(session.error ?: "기록 저장 실패")
+    }
+    private fun routeSteps() {
+        val hud=NavigationHudModel.from(session.scenario,session.totalTripMetres,session.travelledMetres,session.continuingToParking)
+        AlertDialog.Builder(this).setTitle("시연 경로 안내").setMessage(hud.cues.joinToString("\n\n") {cue->"${cue.label} · ${cue.metres?.let {"${it.toInt()}m"} ?: "다음 단계"}"}+"\n\n차로·횡단보도·핸들은 시연 경로를 설명하는 예시입니다.")
+            .setPositiveButton("확인",null).show()
     }
     fun setIndicator(value: Indicator?) {
         session.indicatorOverride=value
@@ -289,15 +316,17 @@ class ChageunActivity: Activity() {
     }
     private fun settings() {
         AlertDialog.Builder(this).setTitle("나에게 맞는 코치")
-            .setItems(arrayOf("음성 ${if(voiceEnabled)"ON" else "OFF"}","축하음·조명 ${if(celebrationEnabled)"ON" else "OFF"}","설명 방식: ${session.manualStyle.title}","실제 차량 데이터 확인","지도 진행: ${session.scenario.source}")){_,i->when(i){
+            .setItems(arrayOf("음성 ${if(voiceEnabled)"ON" else "OFF"}","축하음·조명 ${if(celebrationEnabled)"ON" else "OFF"}","설명 방식: ${session.manualStyle.title}","실제 차량 데이터 확인","지도 진행: ${session.scenario.source}","깜빡이 비교 · 시연 도구","퀘스트 배너: ${if(compactQuestBanner)"간단히" else "카드형"}")){_,i->when(i){
                 0->{voiceEnabled=!voiceEnabled;saveSettings();if(!voiceEnabled)voice?.stop()else voice?.speak("주행 코치 음성 안내를 켰어요")}
                 1->{celebrationEnabled=!celebrationEnabled;saveSettings()}
                 2->AlertDialog.Builder(this).setTitle("설명 방식").setItems(BeginnerStyle.values().map {it.title}.toTypedArray()){_,n->session.manualStyle=BeginnerStyle.values()[n];saveSettings()}.show()
                 3->AlertDialog.Builder(this).setTitle("Pleos 연결 상태").setMessage("속도: ${if(telemetry.fresh)"${telemetry.speedMps} m/s" else "미수신/오래된 값"}\n방향지시등: ${telemetry.indicator}\n조향각(SDK): ${telemetry.steeringAngle}\n브레이크: ${telemetry.brakePressed}\n내비: ${telemetry.navigationStatus}\n음성: $voiceStatus\n축하: $celebrationStatus\n\n지도·차로·핸들은 시나리오 값입니다. 차량 신호는 신호 조건 퀘스트·피드백에 사용합니다. 실제 차로 위치 검증은 별도입니다.").setPositiveButton("확인",null).show()
                 4->AlertDialog.Builder(this).setTitle("지도 진행 속도").setItems(arrayOf("자동 재생 · 직진 40 / 접근 20 / 회전 10km/h","차량 SDK 속도 · 경로는 가상")){_,n->select(session.scenario.lesson,if(n==0)ScenarioSpeed.REPLAY else ScenarioSpeed.VEHICLE)}.show()
+                5->openSimulationTools()
+                6->toggleQuestBannerStyle()
             }}.setNegativeButton("닫기",null).show()
     }
-    private fun saveSettings(){if(!repository.saveSnapshot("settings:product",JSONObject().put("coach",coach).put("voice",voiceEnabled).put("celebration",celebrationEnabled).put("style",session.manualStyle.name).toString()))toast("설정을 저장하지 못했어요")}
+    private fun saveSettings(){if(!repository.saveSnapshot("settings:product",JSONObject().put("coach",coach).put("voice",voiceEnabled).put("celebration",celebrationEnabled).put("style",session.manualStyle.name).put("mapTilted",mapTilted).put("compactQuestBanner",compactQuestBanner).toString()))toast("설정을 저장하지 못했어요")}
     private fun resetQuests() {
         if(session.scenario.started && !session.scenario.complete){toast("진행 중인 연습을 먼저 마쳐 주세요");return}
         AlertDialog.Builder(this).setTitle("시연 퀘스트를 처음부터?").setMessage("현재 시연 성장·포인트를 0으로 시작해요. 지난 주행 기록과 개인 기록은 유지돼요.")
