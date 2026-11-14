@@ -47,16 +47,21 @@ class ReferenceRouteClient(context: Context,private val endpoint: String="https:
             val points=(0 until coordinates.length()).map {index->coordinates.getJSONArray(index).let {GeoPoint(it.getDouble(1),it.getDouble(0))}}
             require(points.size>=2 && points.all {it.valid})
             val names=linkedSetOf<String>();var lanes=false
+            var firstRightTurn: GeoPoint?=null
             val legs=route.getJSONArray("legs")
             for(i in 0 until legs.length()) {
                 val steps=legs.getJSONObject(i).getJSONArray("steps")
                 for(j in 0 until steps.length()) {
                     val step=steps.getJSONObject(j);step.optString("name").takeIf {it.isNotBlank()}?.let {names.add(it)}
+                    val maneuver=step.optJSONObject("maneuver")
+                    if(firstRightTurn==null && maneuver?.optString("modifier")=="right") {
+                        maneuver.optJSONArray("location")?.let {firstRightTurn=GeoPoint(it.getDouble(1),it.getDouble(0))}
+                    }
                     val intersections=step.optJSONArray("intersections") ?: continue
                     for(k in 0 until intersections.length()) if((intersections.getJSONObject(k).optJSONArray("lanes")?.length() ?: 0)>0) lanes=true
                 }
             }
-            return ReferenceRoute(points,route.getDouble("distance"),route.getDouble("duration"),names.toList(),lanes)
+            return ReferenceRoute(points,route.getDouble("distance"),route.getDouble("duration"),names.toList(),lanes,firstRightTurn)
         }
     }
 }

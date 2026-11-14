@@ -23,8 +23,8 @@ class SteeringCoachingTimeline(end: Double,parking: Boolean,angle: (Double)->Dou
             val current=angle(d)
             val next=angle((d+.75).coerceAtMost(end))
             val action=when {
-                abs(current)<8 && abs(next)<8->Action.CENTER
-                abs(next-current)<4->Action.HOLD
+                abs(current)<1 && abs(next)<1->Action.CENTER
+                abs(next-current)<(if(parking)4.0 else .15)->Action.HOLD
                 abs(next)<abs(current) && current>0->Action.LEFT_UNWIND
                 abs(next)<abs(current)->Action.RIGHT_UNWIND
                 next>0->Action.RIGHT_MORE

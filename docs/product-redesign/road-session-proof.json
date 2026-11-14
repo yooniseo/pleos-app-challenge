@@ -1,0 +1,1101 @@
+{
+  "clock": "combined road-to-parking session and tab-switch lane use real elapsed time; standalone fixtures use virtual elapsed time",
+  "indicatorButtons": "PASS: OFF reminder, RIGHT suppresses reminder, SDK input selectable",
+  "parkingTransition": "PASS: same trip continues into parking; no clear or trip end before parking completion",
+  "phases-road-combined-v1": [
+    {
+      "step": "LANE_PREPARE",
+      "metres": 0.023064,
+      "wheel": -0.5111458137999703,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -80.92485090167278,
+      "text": "1차로에서 2차로로 이동할 준비를 해요. 오른쪽 깜빡이를 켜고, 미러와 사각지대를 확인하세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 88.35871672222224,
+      "wheel": 7.573209689444538,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -79.42274474171401,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 94.31427227777779,
+      "wheel": 6.8673701750268465,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -78.4482390212431,
+      "text": "좋아요. 그림의 핸들 위치를 잠시 유지하세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 99.65871672222225,
+      "wheel": 8.183949540152538,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -77.40786752542861,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 117.30316116666673,
+      "wheel": 4.745065517504125,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -74.09548000692031,
+      "text": "핸들을 가운데 두고 천천히 움직이세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 119.49205005555562,
+      "wheel": 3.78677492367705,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -73.85694103728578,
+      "text": "그림처럼 핸들을 왼쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "LANE_COUNTERSTEER",
+      "metres": 135.34760561111116,
+      "wheel": -3.9919197865007803,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -73.93461520404612,
+      "text": "좋아요. 그림의 핸들 위치를 잠시 유지하세요"
+    },
+    {
+      "step": "LANE_COUNTERSTEER",
+      "metres": 141.51427227777785,
+      "wheel": -6.048803243211898,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -74.73929789355557,
+      "text": "이제 오른쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "LANE_COUNTERSTEER",
+      "metres": 148.85871672222225,
+      "wheel": -6.550803455428666,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -75.96270266016778,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "LANE_COUNTERSTEER",
+      "metres": 151.23649450000002,
+      "wheel": -6.0301009295859505,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -76.34687600631685,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "LANE_UNWIND",
+      "metres": 159.76982783333338,
+      "wheel": 9.68761028731217,
+      "lesson": "COMBINED",
+      "lane": 1,
+      "bodyHeading": -76.82891543757732,
+      "text": "핸들을 가운데 두고 천천히 움직이세요"
+    },
+    {
+      "step": "LANE_PREPARE",
+      "metres": 164.95871672222228,
+      "wheel": 1.8493613944272835,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -76.32721989374627,
+      "text": "2차로에서 3차로로 이동할 준비를 해요. 오른쪽 깜빡이를 켜고, 미러와 사각지대를 확인하세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 264.1364945000002,
+      "wheel": 1.151774732532473,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -75.72232237534264,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 268.7364945000002,
+      "wheel": 4.851670333780589,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -75.35451449361311,
+      "text": "좋아요. 그림의 핸들 위치를 잠시 유지하세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 271.15871672222244,
+      "wheel": 6.228460451708131,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -75.00984788239509,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 278.4253833888891,
+      "wheel": 8.434253587833647,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -73.61250356965206,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 291.85871672222225,
+      "wheel": 5.837215810822093,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -70.04009824357207,
+      "text": "핸들을 가운데 두고 천천히 움직이세요"
+    },
+    {
+      "step": "LANE_MOVE",
+      "metres": 295.61427227777784,
+      "wheel": 3.5832478861153962,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -69.59061426290842,
+      "text": "그림처럼 핸들을 왼쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "LANE_COUNTERSTEER",
+      "metres": 310.69205005555557,
+      "wheel": -4.300504890769599,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -69.78084556525248,
+      "text": "좋아요. 그림의 핸들 위치를 잠시 유지하세요"
+    },
+    {
+      "step": "LANE_COUNTERSTEER",
+      "metres": 319.31427227777766,
+      "wheel": -7.1475913804607725,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -71.08060583264192,
+      "text": "이제 오른쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "LANE_UNWIND",
+      "metres": 330.89205005555544,
+      "wheel": -6.301526259374106,
+      "lesson": "COMBINED",
+      "lane": 2,
+      "bodyHeading": -73.23493083996404,
+      "text": "핸들을 가운데 두고 천천히 움직이세요"
+    },
+    {
+      "step": "TURN_PREPARE",
+      "metres": 340.4253833888887,
+      "wheel": 0.017268680497946224,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -74.07516389524662,
+      "text": "오른쪽 깜빡이를 켜고, 우회전 전, 횡단보도도 살펴보세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 545.4212484999994,
+      "wheel": 1.7035193536132744,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -74.36373038549262,
+      "text": "좋아요. 그림의 핸들 위치를 잠시 유지하세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 548.9212484999993,
+      "wheel": 2.178384002075912,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -74.19157313495629,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 565.5656929444441,
+      "wheel": 27.26537475292116,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -71.20873345184042,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 567.240692944444,
+      "wheel": 65.75099965338732,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -69.4563792795661,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 582.7573596111108,
+      "wheel": 75.36424587511765,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -51.03372140348636,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 590.7851373888885,
+      "wheel": 72.46951239089063,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -35.01662044738981,
+      "text": "좋아요. 그림의 핸들 위치를 잠시 유지하세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 592.8406929444441,
+      "wheel": 71.34843851376246,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -31.235618328866714,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 596.8323596111106,
+      "wheel": 71.95174988545922,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -23.945103724482024,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 599.2295818333329,
+      "wheel": 74.03689138008068,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": -19.470122801145006,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 622.5351373888867,
+      "wheel": 69.69568561503773,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": 9.795444188028771,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 645.3090091111089,
+      "wheel": 13.048107492886244,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": 37.527282926536195,
+      "text": "그림처럼 핸들을 왼쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 654.5312313333313,
+      "wheel": -12.711050241433824,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": 37.58444789223959,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 655.5590091111092,
+      "wheel": -15.750803765968143,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": 37.21060799753148,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 664.0367868888869,
+      "wheel": 15.910835818083203,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": 38.65493614345668,
+      "text": "그림처럼 핸들을 왼쪽으로 조금 더 돌리세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 668.0423424444424,
+      "wheel": 1.1805352847039565,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": 39.528700603729305,
+      "text": "이제 오른쪽으로 풀어 핸들을 가운데로 맞추세요"
+    },
+    {
+      "step": "TURN",
+      "metres": 669.7256757777757,
+      "wheel": -5.062039805372453,
+      "lesson": "COMBINED",
+      "lane": 3,
+      "bodyHeading": 39.44597325657522,
+      "text": "핸들을 가운데 두고 천천히 움직이세요"
+    },
+    {
+      "step": "PARK_POSITION",
+      "metres": 0,
+      "wheel": 0,
+      "lesson": "PARKING",
+      "lane": 3,
+      "bodyHeading": 0,
+      "text": "주차칸 옆에 천천히 위치를 맞춰요"
+    },
+    {
+      "step": "PARK_CHECK",
+      "metres": 5,
+      "wheel": 0,
+      "lesson": "PARKING",
+      "lane": 3,
+      "bodyHeading": 358.1504834861911,
+      "text": "멈춘 뒤 미러와 뒤쪽을 확인해요"
+    },
+    {
+      "step": "PARK_REVERSE",
+      "metres": 5,
+      "wheel": 37.052905022533004,
+      "lesson": "PARKING",
+      "lane": 3,
+      "bodyHeading": 358.1504834861911,
+      "text": "그림처럼 핸들을 오른쪽으로 조금 더 돌리세요. 뒤쪽과 양옆도 확인하세요"
+    },
+    {
+      "step": "PARK_REVERSE",
+      "metres": 7.059444444444449,
+      "wheel": 326.90354386087387,
+      "lesson": "PARKING",
+      "lane": 3,
+      "bodyHeading": 343.8978077777404,
+      "text": "이제 왼쪽으로 풀어 핸들을 가운데로 맞추세요. 뒤쪽과 양옆도 확인하세요"
+    },
+    {
+      "step": "PARK_REVERSE",
+      "metres": 11.348888888888874,
+      "wheel": 64.95032412011416,
+      "lesson": "PARKING",
+      "lane": 3,
+      "bodyHeading": 315.6340331126636,
+      "text": "그림처럼 핸들을 왼쪽으로 조금 더 돌리세요. 뒤쪽과 양옆도 확인하세요"
+    },
+    {
+      "step": "PARK_COUNTERSTEER",
+      "metres": 15.80666666666661,
+      "wheel": -330.22601164510064,
+      "lesson": "PARKING",
+      "lane": 3,
+      "bodyHeading": 334.917367205222,
+      "text": "이제 오른쪽으로 풀어 핸들을 가운데로 맞추세요. 뒤쪽과 양옆도 확인하세요"
+    },
+    {
+      "step": "PARK_ALIGN",
+      "metres": 19.347777777777743,
+      "wheel": -29.64224623184987,
+      "lesson": "PARKING",
+      "lane": 3,
+      "bodyHeading": 359.97506662563876,
+      "text": "핸들을 가운데 두고 천천히 움직이세요. 뒤쪽과 양옆도 확인하세요"
+    },
+    {
+      "step": "COMPLETE",
+      "metres": 21.86504978187338,
+      "wheel": 0,
+      "lesson": "PARKING",
+      "lane": 3,
+      "bodyHeading": 360,
+      "text": "잘했어요! 연습을 마쳤어요"
+    }
+  ],
+  "voice-road-combined-v1": [
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661780069,
+      "values": {
+        "text": "1차로에서 2차로로 이동할 준비를 해요. 오른쪽 깜빡이를 켜고, 미러와 사각지대를 확인하세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661780125,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661786686,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661791847,
+      "values": {
+        "text": "오른쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661792011,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661793803,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661793831,
+      "values": {
+        "text": "왼쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661793850,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661795664,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661795710,
+      "values": {
+        "text": "이대로 유지하세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661795731,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661797190,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661797197,
+      "values": {
+        "text": "왼쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661797237,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661798949,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661798966,
+      "values": {
+        "text": "2차로에서 3차로로 이동할 준비를 해요. 오른쪽 깜빡이를 켜고, 미러와 사각지대를 확인하세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661798998,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661805672,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661807303,
+      "values": {
+        "text": "오른쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661807330,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661809437,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661809456,
+      "values": {
+        "text": "왼쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661809493,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661811541,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661811547,
+      "values": {
+        "text": "이대로 유지하세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661811570,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661813027,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661813033,
+      "values": {
+        "text": "오른쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661813048,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661814958,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661815018,
+      "values": {
+        "text": "오른쪽 깜빡이를 켜고, 우회전 전, 횡단보도도 살펴보세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661815062,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661819565,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661847782,
+      "values": {
+        "text": "이대로 유지하세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661847793,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661849546,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661849553,
+      "values": {
+        "text": "오른쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661849590,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661851771,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661854981,
+      "values": {
+        "text": "왼쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661854998,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661856790,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661856804,
+      "values": {
+        "text": "오른쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661856831,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661858654,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661861170,
+      "values": {
+        "text": "왼쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661861182,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661862930,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661864115,
+      "values": {
+        "text": "이대로 유지하세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661864135,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661865248,
+      "values": {
+        "text": "오른쪽 깜빡이를 켜고, 우회전 전, 횡단보도도 살펴보세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661865370,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661865889,
+      "values": {
+        "text": "오른쪽 깜빡이를 켜고, 우회전 전, 횡단보도도 살펴보세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661866010,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661870387,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661870397,
+      "values": {
+        "text": "오른쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661870411,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661872371,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661875725,
+      "values": {
+        "text": "왼쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661875753,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661877592,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661881333,
+      "values": {
+        "text": "왼쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661881343,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661883355,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661883357,
+      "values": {
+        "text": "왼쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661883381,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661885092,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661885100,
+      "values": {
+        "text": "왼쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661885142,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661886909,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661886925,
+      "values": {
+        "text": "가운데 유지하세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661886943,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661888065,
+      "values": {
+        "text": "주차칸 옆에 천천히 위치를 맞춰요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661888081,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661890655,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661893870,
+      "values": {
+        "text": "멈춘 뒤 미러와 뒤쪽을 확인해요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661893880,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661896677,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661898917,
+      "values": {
+        "text": "오른쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661898924,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661901150,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661902624,
+      "values": {
+        "text": "왼쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661902646,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661904704,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661910292,
+      "values": {
+        "text": "왼쪽으로 더 돌리세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661910307,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661912224,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661918369,
+      "values": {
+        "text": "오른쪽으로 풀어 가운데로"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661918375,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661920292,
+      "values": {}
+    },
+    {
+      "api": "COACH_SPEECH",
+      "kind": "REQUEST",
+      "at": 1794661924692,
+      "values": {
+        "text": "가운데 유지하세요"
+      }
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_STARTED",
+      "at": 1794661924721,
+      "values": {}
+    },
+    {
+      "api": "TTS",
+      "kind": "PLAYBACK_DONE",
+      "at": 1794661926106,
+      "values": {}
+    }
+  ],
+  "fixtures": [
+    {
+      "fixture": "road-combined-v1",
+      "tripId": "50d1ceea-b1e9-4a2a-9b4f-0bacd2a7a4c6",
+      "metres": 702.9197,
+      "samples": 146,
+      "skills": [
+        "LANE_CHANGE",
+        "INTERSECTION",
+        "PARKING"
+      ],
+      "points": 600
+    },
+    {
+      "fixture": "road-lane-v1",
+      "tripId": "30dd876e-cca5-4362-a2b3-9c15db1d6f3b",
+      "metres": 204.5004,
+      "samples": 23,
+      "skills": [
+        "LANE_CHANGE"
+      ],
+      "points": 200
+    },
+    {
+      "fixture": "road-turn-v1",
+      "tripId": "dd71ff98-53c0-4949-b06e-62ea18dd7682",
+      "metres": 292.72003,
+      "samples": 74,
+      "skills": [
+        "INTERSECTION"
+      ],
+      "points": 100
+    },
+    {
+      "fixture": "parking-reverse-v1",
+      "tripId": "57f76fe9-dfd4-4f69-bdb8-bff13eb4a74c",
+      "metres": 21.86505,
+      "samples": 42,
+      "skills": [
+        "PARKING"
+      ],
+      "points": 100
+    }
+  ],
+  "pleosSpeech": {
+    "starts": 38,
+    "completed": 35
+  },
+  "realTimeLane": {
+    "tripId": "6d268dd9-d8e7-46e2-8490-51727f8ac6ff",
+    "metres": 204.5004,
+    "samples": 23
+  },
+  "reopen": "PASS: 5 trips, 8 evidence, 1200 points",
+  "reset": "PASS: current 0 points; previous reports\/rewards and personal state preserved",
+  "processRecovery": "PASS: interrupted trip closed, no completion or reward fabricated"
+}

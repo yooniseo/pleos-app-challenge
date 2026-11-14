@@ -52,17 +52,18 @@ class ChageunActivity: Activity() {
         window.statusBarColor=Color.WHITE;window.navigationBarColor=Color.WHITE
         art=ProductIllustrations();telemetry=VehicleTelemetry(this)
         val route=ReferenceRouteClient.parse(applicationContext.assets.open("road_reference/kgu-route.json").bufferedReader().use {it.readText()})
-        session=ReplaySessionController(this,NavigationSimulationRoute(route.points))
+        session=ReplaySessionController(this,NavigationSimulationRoute.reference(route))
         val settings=JSONObject(repository.snapshot("settings:product") ?: "{}")
         coach=settings.optBoolean("coach",true);voiceEnabled=settings.optBoolean("voice",true);celebrationEnabled=settings.optBoolean("celebration",true)
         session.coachingEnabled=coach
         session.manualStyle=runCatching {BeginnerStyle.valueOf(settings.optString("style","ADAPTIVE"))}.getOrDefault(BeginnerStyle.ADAPTIVE)
         session.onMilestone={done->
             points=repository.points("demo")
-            milestoneText=if(done)"잘했어요! 연습을 마쳤어요" else "띵동! 한 차로 이동 완료"
+            milestoneText=if(done && session.scenario.lesson==RoadLesson.PARKING)"잘했어요! 주차까지 마쳤어요" else if(session.scenario.complete)"주행을 마쳤어요 · 주차 가이드로 이어가요" else "띵동! ${session.scenario.currentLane}차로 이동 완료"
             milestoneUntil=SystemClock.elapsedRealtime()+2300
             if(done)celebration?.celebrate(celebrationEnabled) else celebration?.ding(celebrationEnabled)
         }
+        session.onParkingStarted={voice?.stop();show(AppScreen.PARKING)}
         points=repository.points("demo");show(AppScreen.MAP)
     }
     override fun onStart() {
@@ -86,7 +87,9 @@ class ChageunActivity: Activity() {
             startButton?.isEnabled=!emptyPreview && (!s.started || session.paused || s.complete)
             pauseButton?.isEnabled=s.started && !s.complete && !session.paused
             if(session.completedAt!=null && completionShown!=session.tripId) {
-                completionShown=session.tripId;selectedTrip=session.tripId;show(AppScreen.FEEDBACK)
+                completionShown=session.tripId;selectedTrip=session.tripId
+                if(s.lesson==RoadLesson.PARKING)show(AppScreen.FEEDBACK)
+                else {milestoneText="주행 연습 완료 · 주차 가이드에서 이어가세요";milestoneUntil=now+8000}
             }
             speechGate.next(session.tripId,ScenarioCoachingCues.at(s),now,
                 coach && voiceEnabled && !session.paused && session.learning().automaticSpeech,
@@ -117,10 +120,11 @@ class ChageunActivity: Activity() {
                 val id=selectedTrip ?: session.tripId ?: repository.trips().firstOrNull {it.endedAt!=null}?.tripId
                 val feedback=CompletionCanvas(this,art).apply {
                     trip=id?.let(repository::trip);report=id?.let(repository::report);state=session.quest
-                    complete=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)?.optString("status")=="COMPLETE"
+                    complete=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)?.optString("status")=="COMPLETE" && repository.events(id).any {it.type=="PRACTICE_REWARD" && JSONObject(it.payload).optString("skill")=="PARKING"}
                     earned=id?.let(repository::tripPoints) ?: 0
                     completed=id?.let {repository.events(it).count {e->e.type=="PRACTICE_REWARD"}} ?: 0
-                    target=when(id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)?.optString("lesson")){"COMBINED"->2;null->0;else->1}
+                    val metadata=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)
+                    target=metadata?.optInt("targetCount",if(metadata.optString("lesson")=="COMBINED")2 else 1) ?: 0
                 }
                 canvas=feedback;layers.addView(bg,FrameLayout.LayoutParams(-1,-1));layers.addView(feedback,FrameLayout.LayoutParams(-1,-1));layers
             }
@@ -210,7 +214,7 @@ class ChageunActivity: Activity() {
                 1->{celebrationEnabled=!celebrationEnabled;saveSettings()}
                 2->AlertDialog.Builder(this).setTitle("설명 방식").setItems(BeginnerStyle.values().map {it.title}.toTypedArray()){_,n->session.manualStyle=BeginnerStyle.values()[n];saveSettings()}.show()
                 3->AlertDialog.Builder(this).setTitle("Pleos 연결 상태").setMessage("속도: ${if(telemetry.fresh)"${telemetry.speedMps} m/s" else "미수신/오래된 값"}\n방향지시등: ${telemetry.indicator}\n내비: ${telemetry.navigationStatus}\n음성: $voiceStatus\n축하: $celebrationStatus\n\n지도·차로·핸들은 시나리오 값입니다. 원시 차량 신호는 퀘스트 성공 판정으로 사용하지 않습니다.").setPositiveButton("확인",null).show()
-                4->AlertDialog.Builder(this).setTitle("지도 진행 속도").setItems(arrayOf("자동 재생 · 8/6km/h","차량 SDK 속도 · 경로는 가상")){_,n->select(session.scenario.lesson,if(n==0)ScenarioSpeed.REPLAY else ScenarioSpeed.VEHICLE)}.show()
+                4->AlertDialog.Builder(this).setTitle("지도 진행 속도").setItems(arrayOf("자동 재생 · 직진 40 / 접근 20 / 회전 10km/h","차량 SDK 속도 · 경로는 가상")){_,n->select(session.scenario.lesson,if(n==0)ScenarioSpeed.REPLAY else ScenarioSpeed.VEHICLE)}.show()
             }}.setNegativeButton("닫기",null).show()
     }
     private fun saveSettings(){if(!repository.saveSnapshot("settings:product",JSONObject().put("coach",coach).put("voice",voiceEnabled).put("celebration",celebrationEnabled).put("style",session.manualStyle.name).toString()))toast("설정을 저장하지 못했어요")}

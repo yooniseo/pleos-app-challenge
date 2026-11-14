@@ -9,7 +9,7 @@ class ReplayCatalogTest {
     @Test fun fourFixturesHaveIndependentExpectedOutcomesAndNoUnsupportedAwards() {
         assertEquals(RoadLesson.values().toSet(),ReplayCatalog.all.map {it.lesson}.toSet())
         assertEquals(4,ReplayCatalog.all.map {it.id}.toSet().size)
-        assertEquals(700,ReplayCatalog.all.sumOf {it.expectedSkills.sumOf(PracticeRewards::points)})
+        assertEquals(1000,ReplayCatalog.all.sumOf {it.rewardSkills.sumOf(PracticeRewards::points)})
         assertEquals(0,PracticeRewards.points("SPEED"));assertEquals(0,PracticeRewards.points("PREPARATION"))
     }
 }

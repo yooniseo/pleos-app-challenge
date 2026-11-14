@@ -33,7 +33,7 @@ data class DriverLanePlan(val routeId: String,val current: Int,val target: Int,v
     }
 }
 data class ReferenceRoute(val points: List<GeoPoint>,val distanceMeters: Double,val durationSeconds: Double,
-    val roadNames: List<String>,val laneDataAvailable: Boolean) {
+    val roadNames: List<String>,val laneDataAvailable: Boolean,val firstRightTurn: GeoPoint?=null) {
     fun positionAt(fraction: Double): GeoPoint {
         require(points.size>=2 && fraction.isFinite())
         val lengths=points.zipWithNext {a,b->hypot((b.longitude-a.longitude)*cos(Math.toRadians(a.latitude)),b.latitude-a.latitude)}

@@ -32,7 +32,7 @@ class ProductSmokeRunner: Instrumentation() {
         var repository=SharedCoachRepository(Room.databaseBuilder(targetContext,TripDatabase::class.java,name).addMigrations(TripDatabase.MIGRATION_1_2).build())
         SharedCoachRepository.testOverride=repository
         output=File(targetContext.filesDir,"product-validation").apply {mkdirs()}
-        val proof=JSONObject().put("clock",if(focusedReal)"turn, parking and tab-switch lane use real elapsed time; combined and initial lane use virtual elapsed time" else if(realTime)"all four fixtures and the tab-switch lane run use real elapsed time" else "four fixtures use virtual elapsed time; one lane run uses real time")
+        val proof=JSONObject().put("clock",if(focusedReal)"combined road-to-parking session and tab-switch lane use real elapsed time; standalone fixtures use virtual elapsed time" else if(realTime)"all four fixtures and the tab-switch lane run use real elapsed time" else "four fixtures use virtual elapsed time; one lane run uses real time")
         try {
             check(android.os.Build.HARDWARE in setOf("ranchu","goldfish")) {"Emulator-only probe"}
             QuestStore(targetContext,true).resetDemoProgress()
@@ -65,7 +65,7 @@ class ProductSmokeRunner: Instrumentation() {
             proof.put("indicatorButtons","PASS: OFF reminder, RIGHT suppresses reminder, SDK input selectable")
             val runs=JSONArray()
             ReplayCatalog.all.forEachIndexed {i,definition->
-                val playReal=realTime || (focusedReal && definition.lesson in setOf(RoadLesson.TURN,RoadLesson.PARKING))
+                val playReal=realTime || (focusedReal && definition.lesson==RoadLesson.COMBINED)
                 var id=""
                 var speechFrom=0L
                 runOnMainSync {
@@ -93,9 +93,15 @@ class ProductSmokeRunner: Instrumentation() {
                         runOnMainSync {
                             if(app.session.paused && !app.session.scenario.complete)check(app.session.start())
                             val s=app.session.scenario;val cue=ScenarioCoachingCues.at(s)
+                            if(definition.lesson==RoadLesson.COMBINED && s.lesson==RoadLesson.PARKING && !s.complete) {
+                                check(app.session.completedAt==null)
+                                check(repository.trip(id)?.endedAt==null)
+                                check(app.screen!=AppScreen.FEEDBACK)
+                                proof.put("parkingTransition","PASS: same trip continues into parking; no clear or trip end before parking completion")
+                            }
                             if(seen.add(cue.identity)) {
                                 stage=cue.step
-                                phases.put(JSONObject().put("step",cue.step.name).put("metres",s.distance).put("wheel",s.steeringTarget).put("bodyHeading",s.frame().bearing).put("text",cue.full))
+                                phases.put(JSONObject().put("step",cue.step.name).put("metres",s.distance).put("wheel",s.steeringTarget).put("lesson",s.lesson.name).put("lane",s.currentLane).put("bodyHeading",s.frame().bearing).put("text",cue.full))
                             }
                         }
                         stage?.let {capture(app,"phase-${definition.id}-${phases.length()}-${it.name}")}
@@ -112,20 +118,20 @@ class ProductSmokeRunner: Instrumentation() {
                 val earned=events.filter {it.type=="PRACTICE_REWARD"}
                 val actual=earned.map {JSONObject(it.payload).getString("skill")}.toSet()
                 check(actual==definition.expectedSkills) {"Wrong evidence: $actual vs ${definition.expectedSkills}"}
-                check(earned.size==definition.expectedSkills.size)
-                check(repository.tripPoints(id)==definition.expectedSkills.sumOf {PracticeRewards.points(it)})
+                check(earned.size==definition.rewardSkills.size)
+                check(repository.tripPoints(id)==definition.rewardSkills.sumOf {PracticeRewards.points(it)})
                 check(repository.trip(id)?.distanceKm!!>0 && repository.trip(id)?.endedAt!=null)
                 check(repository.samples(id).size>=5 && repository.report(id)!=null)
                 capture(app,"complete-${definition.id}")
                 runs.put(JSONObject().put("fixture",definition.id).put("tripId",id).put("metres",repository.trip(id)!!.distanceKm!!*1000)
                     .put("samples",repository.samples(id).size).put("skills",JSONArray(actual.toList())).put("points",repository.tripPoints(id)))
             }
-            check(repository.trips().size==4 && repository.points("demo")==700)
+            check(repository.trips().size==4 && repository.points("demo")==1000)
             proof.put("fixtures",runs)
             var speechBaseline=0
             runOnMainSync {speechBaseline=app.voiceDiagnostics().count {it.api=="TTS" && it.kind=="PLAYBACK_STARTED"}}
             // Real-time playback continues through internal tab switches and stops while paused.
-            runOnMainSync {app.select(RoadLesson.LANE);app.window.decorView.findViewWithTag<Button>("replay_start").performClick()}
+            runOnMainSync {app.select(RoadLesson.LANE);app.session.manualStyle=BeginnerStyle.STEP_BY_STEP;app.window.decorView.findViewWithTag<Button>("replay_start").performClick()}
             val id=app.session.tripId!!
             Thread.sleep(1100)
             var before=0.0
@@ -137,7 +143,7 @@ class ProductSmokeRunner: Instrumentation() {
             val deadline=SystemClock.elapsedRealtime()+40_000
             while(app.session.completedAt==null && SystemClock.elapsedRealtime()<deadline)Thread.sleep(200)
             check(app.session.completedAt!=null)
-            check(repository.points("demo")==900)
+            check(repository.points("demo")==1200)
             var speech=emptyList<ApiObservation>()
             val speechDeadline=SystemClock.elapsedRealtime()+6000
             do {
@@ -155,15 +161,15 @@ class ProductSmokeRunner: Instrumentation() {
             repository.close()
             repository=SharedCoachRepository(Room.databaseBuilder(targetContext,TripDatabase::class.java,name).addMigrations(TripDatabase.MIGRATION_1_2).build())
             SharedCoachRepository.testOverride=repository
-            check(repository.trips().size==5 && repository.points("demo")==900)
+            check(repository.trips().size==5 && repository.points("demo")==1200)
             val reopened=ReplaySessionController(targetContext,NavigationSimulationRoute(listOf(GeoPoint(37.0,127.0),GeoPoint(37.001,127.0))))
             val personal=QuestStore(targetContext,false).load()
-            check(reopened.quest.evidence.size==6)
+            check(reopened.quest.evidence.size==8)
             check(reopened.resetProgress())
             check(repository.points("demo")==0 && reopened.quest.evidence.isEmpty())
             check(repository.trips().size==5 && repository.report(id)!=null && repository.tripPoints(id)==200)
             check(QuestStore(targetContext,false).load()==personal)
-            proof.put("reopen","PASS: 5 trips, 6 evidence, 900 points").put("reset","PASS: current 0 points; previous reports/rewards and personal state preserved")
+            proof.put("reopen","PASS: 5 trips, 8 evidence, 1200 points").put("reset","PASS: current 0 points; previous reports/rewards and personal state preserved")
             // Simulate process loss without calling close(): recovery cannot award a success.
             check(reopened.start())
             val orphanId=reopened.tripId!!

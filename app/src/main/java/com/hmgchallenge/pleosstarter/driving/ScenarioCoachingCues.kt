@@ -9,7 +9,7 @@ object ScenarioCoachingCues {
         val base=phase(s)
         if(base.step !in setOf(CoachingStep.LANE_MOVE,CoachingStep.LANE_COUNTERSTEER,CoachingStep.LANE_UNWIND,
             CoachingStep.TURN,CoachingStep.TURN_UNWIND,CoachingStep.PARK_REVERSE,CoachingStep.PARK_COUNTERSTEER,CoachingStep.PARK_ALIGN))return base
-        val movement=s.steeringInstructions.at(s.distance)
+        val movement=s.steeringInstructions.at((s.distance+s.speedMps*.8).coerceAtMost(s.endDistance))
         val action=movement.action.text
         val detail=if(s.lesson==RoadLesson.PARKING)"$action. 뒤쪽과 양옆도 확인하세요" else action
         return base.copy(full=detail,action=action,brief=action,spoken=movement.action.spoken,identity=movement.key)
@@ -23,14 +23,20 @@ object ScenarioCoachingCues {
         s.lesson==RoadLesson.PARKING && s.distance>=s.endDistance-3->cue(CoachingStep.PARK_ALIGN,"차가 곧아지면 핸들을 풀어 가운데로 맞춰요","핸들을 풀고 주차선과 나란하게 맞춰요","핸들 복원 · 정렬","차가 곧아지면 핸들을 풀어 가운데로 맞춰요")
         s.lesson==RoadLesson.PARKING && s.distance>=s.parkingCountersteerDistance->cue(CoachingStep.PARK_COUNTERSTEER,"이제 왼쪽으로 돌려 차를 주차선과 나란하게 맞춰요","왼쪽으로 돌려 차를 나란하게 맞춰요","왼쪽으로 · 나란하게","이제 왼쪽으로 돌려 나란하게 맞춰요")
         s.lesson==RoadLesson.PARKING->cue(CoachingStep.PARK_REVERSE,"오른쪽으로 꺾고 뒤쪽을 보며 천천히 후진해요","오른쪽으로 꺾으며 천천히 후진해요","오른쪽 조향 · 후진","오른쪽으로 꺾으며 천천히 후진해요")
-        s.lesson!=RoadLesson.TURN && s.distance<12->preparation(CoachingStep.LANE_PREPARE,s.indicator)
-        s.lesson!=RoadLesson.TURN && s.distance<25->cue(CoachingStep.LANE_MOVE,"오른쪽으로 조금 꺾은 뒤 천천히 가운데로 풀어요","오른쪽으로 조금 꺾어요","오른쪽 한 차로 이동","오른쪽으로 조금 꺾어요")
-        s.lesson!=RoadLesson.TURN && s.distance<38->cue(CoachingStep.LANE_COUNTERSTEER,"왼쪽으로 조금 돌린 뒤 차가 나란해지면 가운데로 풀어요","왼쪽으로 조금 돌려 나란하게 맞춰요","왼쪽으로 · 나란하게","왼쪽으로 조금 돌려 나란하게 맞춰요")
-        s.lesson!=RoadLesson.TURN && s.distance<42->cue(CoachingStep.LANE_UNWIND,"차가 나란해지면 핸들을 가운데로 맞춰요","핸들을 가운데로 맞춰요","핸들 가운데로","핸들을 가운데로 맞춰요")
+        s.nextLaneChange!=null && !s.changingLane->lanePreparation(s)
+        s.changingLane && s.laneChangeProgress<.45->cue(CoachingStep.LANE_MOVE,"오른쪽으로 살짝 돌려 한 차로만 이동해요","오른쪽으로 살짝 돌려요","한 차로 이동")
+        s.changingLane && s.laneChangeProgress<.85->cue(CoachingStep.LANE_COUNTERSTEER,"왼쪽으로 살짝 돌려 차를 나란하게 맞춰요","왼쪽으로 살짝 돌려요","차를 나란하게")
+        s.changingLane->cue(CoachingStep.LANE_UNWIND,"차가 나란해지면 가운데로 맞춰요","핸들을 가운데로","핸들 복원")
         s.lesson==RoadLesson.LANE->cue(CoachingStep.LANE_UNWIND,"좋아요! 차로 안에서 핸들을 가운데로 유지해요","핸들 가운데 · 차로 유지","차로 유지")
         s.distance>=s.endDistance-10->cue(CoachingStep.TURN_UNWIND,"새 도로와 나란해지면 핸들을 부드럽게 풀어요","핸들을 풀어 가운데로 맞춰요","우회전 마무리","새 도로와 나란해지면 핸들을 부드럽게 풀어요")
         s.distance>=s.course.turnDistance-3->cue(CoachingStep.TURN,"길을 따라 오른쪽으로 부드럽게 돌려요","오른쪽으로 부드럽게 돌려요","천천히 우회전","길을 따라 오른쪽으로 부드럽게 돌려요")
         else->preparation(CoachingStep.TURN_PREPARE,s.indicator)
+    }
+    private fun lanePreparation(s: SimpleRoadScenario): ScenarioCoachingCue {
+        val change=s.nextLaneChange!!
+        val base=preparation(CoachingStep.LANE_PREPARE,s.indicator)
+        val text="${change.from}차로에서 ${change.to}차로로 이동할 준비를 해요. ${base.full}"
+        return base.copy(full=text,action=text,spoken=text,identity="lane-prepare:${change.from}")
     }
     fun preparation(step: CoachingStep,indicator: Indicator): ScenarioCoachingCue {
         val check=if(step==CoachingStep.LANE_PREPARE)"미러와 사각지대를 확인하세요" else "우회전 전, 횡단보도도 살펴보세요"

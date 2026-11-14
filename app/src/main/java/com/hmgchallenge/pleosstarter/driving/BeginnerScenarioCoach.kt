@@ -8,7 +8,7 @@ data class BeginnerGuidance(val headline: String,val detail: String,val checklis
 
 object BeginnerScenarioCoach {
     fun steeringPosition(angle: Double): String {
-        if(abs(angle)<10)return "현재 핸들 · 가운데"
+        if(abs(angle)<1)return "현재 핸들 · 가운데"
         val side=if(angle>0)"오른쪽" else "왼쪽"
         return when {
             abs(angle)>=350->"현재 핸들 · $side 한 바퀴 위치"
@@ -18,7 +18,7 @@ object BeginnerScenarioCoach {
     }
     fun guidance(s: SimpleRoadScenario,style: BeginnerStyle): BeginnerGuidance {
         val angle=s.steeringTarget.roundToInt()
-        val direction=if(angle< -9)"왼쪽" else if(angle>9)"오른쪽" else "가운데"
+        val direction=if(angle< -1)"왼쪽" else if(angle>1)"오른쪽" else "가운데"
         val amount=turnAmount(angle)
         val cue=ScenarioCoachingCues.at(s)
         val checklist=if(s.lesson==RoadLesson.PARKING)

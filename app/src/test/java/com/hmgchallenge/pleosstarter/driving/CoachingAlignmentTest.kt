@@ -46,8 +46,9 @@ class CoachingAlignmentTest {
             val s=SimpleRoadScenario(route(),lesson);s.start()
             var prior=s.frame();var right=false;var left=false
             repeat(4000) {
-                val wheel=s.steeringTarget
+                val beforeWheel=s.steeringTarget
                 s.advance(50,null,false)
+                val wheel=(beforeWheel+s.steeringTarget)/2
                 val frame=s.frame()
                 val travel=NavigationSimulationRoute.metres(prior.position,frame.position)
                 val yaw=(frame.bearing-prior.bearing+540)%360-180

@@ -84,9 +84,9 @@ class SharedCoachRepository(val database: TripDatabase) {
             }
     }
 
-    fun beginTrip(id: String,lesson: String,speedSource: String,at: Long): Boolean=write("trip") {
+    fun beginTrip(id: String,lesson: String,speedSource: String,at: Long,targetCount: Int=if(lesson=="COMBINED")2 else 1): Boolean=write("trip") {
         dao.saveTrip(Trip(id,at,null,if(speedSource=="VEHICLE")"VEHICLE" else "REPLAY",0f))
-        dao.saveSnapshot(AppSnapshot("trip:$id",JSONObject().put("lesson",lesson).put("profile","demo").put("speedSource",speedSource).put("scenario",true).put("runtime","product-v1").put("status","ACTIVE").toString(),at))
+        dao.saveSnapshot(AppSnapshot("trip:$id",JSONObject().put("lesson",lesson).put("profile","demo").put("speedSource",speedSource).put("scenario",true).put("runtime","product-v1").put("targetCount",targetCount).put("status","ACTIVE").toString(),at))
     }
     fun sample(id: String,t: Long,kmh: Float?,distanceKm: Float) {
         // Fire-and-forget only for telemetry; later state writes/readbacks queue behind this work.

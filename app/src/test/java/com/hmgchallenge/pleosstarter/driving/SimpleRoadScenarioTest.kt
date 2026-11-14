@@ -57,10 +57,10 @@ class SimpleRoadScenarioTest {
         assertTrue(state.evidence.isEmpty())
         var at=1000L
         repeat(25){s.advance(1000,5.0,true);state=link.sync(state,s,at++)}
-        assertEquals(1,state.practiceCount(CoachSkill.LANE_CHANGE));assertEquals(0,state.practiceCount(CoachSkill.INTERSECTION))
+        assertEquals(2,state.practiceCount(CoachSkill.LANE_CHANGE));assertEquals(0,state.practiceCount(CoachSkill.INTERSECTION))
         repeat(30){s.advance(1000,5.0,true);state=link.sync(state,s,at++)}
         assertTrue(s.complete)
-        assertEquals(1,state.practiceCount(CoachSkill.LANE_CHANGE));assertEquals(1,state.practiceCount(CoachSkill.INTERSECTION))
+        assertEquals(2,state.practiceCount(CoachSkill.LANE_CHANGE));assertEquals(1,state.practiceCount(CoachSkill.INTERSECTION))
         assertTrue(state.evidence.all {it.source==QuestEvidence.SIMULATION})
         assertNotNull(state.session!!.finishedAt)
         assertEquals(state,link.sync(state,s,at))

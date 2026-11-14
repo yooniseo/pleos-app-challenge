@@ -27,6 +27,12 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
     var error: String?=null; private set
     var completedAt: Long?=null; private set
     var onMilestone: (Boolean)->Unit={}
+    var onParkingStarted: ()->Unit={}
+    var selectedLesson=RoadLesson.COMBINED; private set
+    private var roadMetres=0.0
+    private var selectedSpeed=ScenarioSpeed.REPLAY
+    val travelledMetres get()=roadMetres+scenario.distance-scenario.startDistance
+    val continuingToParking get()=selectedLesson==RoadLesson.COMBINED && scenario.lesson==RoadLesson.COMBINED
     private var link: SimpleScenarioQuests?=null
     private var lastSample=0L
     private var startedAt=0L
@@ -50,14 +56,15 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
     fun select(lesson: RoadLesson, source: ScenarioSpeed=ScenarioSpeed.REPLAY): Boolean {
         if(!close())return false
         scenario=SimpleRoadScenario(course,lesson,if(lesson==RoadLesson.PARKING)ScenarioSpeed.REPLAY else source)
+        selectedLesson=lesson;selectedSpeed=scenario.source;roadMetres=0.0
         tripId=null;link=null;paused=true;completedAt=null;lastKey="";finalized=false;error=null
         return true
     }
     fun start(now: Long=System.currentTimeMillis()): Boolean {
-        if(scenario.complete && !select(scenario.lesson,scenario.source))return false
+        if(scenario.complete && !select(selectedLesson,selectedSpeed))return false
         if(tripId!=null && scenario.started){paused=false;error=null;return true}
         val id=UUID.randomUUID().toString()
-        if(!repository.beginTrip(id,scenario.lesson.name,scenario.source.name,now))return fail()
+        if(!repository.beginTrip(id,scenario.lesson.name,scenario.source.name,now,if(selectedLesson==RoadLesson.COMBINED)4 else 1))return fail()
         startedAt=now;link=SimpleScenarioQuests(id,now)
         synchronized(QuestIntegration.lock) {
             val next=link!!.begin(store.load(),now)
@@ -76,24 +83,31 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
         tripId?.let {id->if(lastSample==0L || monotonic-lastSample>=1000) {
             val kmh=if(scenario.source==ScenarioSpeed.VEHICLE)vehicleMps?.takeIf {fresh && it.isFinite() && it>=0}?.times(3.6)?.toFloat()
                 else (scenario.speedMps*3.6).toFloat()
-            repository.sample(id,now,kmh,((scenario.distance-scenario.startDistance)/1000).toFloat());lastSample=monotonic
+            repository.sample(id,now,kmh,(travelledMetres/1000).toFloat());lastSample=monotonic
         }}
-        val key="${scenario.laneDone}:${scenario.complete}"
+        val key="${scenario.lesson}:${scenario.completedLaneChanges}:${scenario.complete}"
         if(key!=lastKey) {
             synchronized(QuestIntegration.lock) {
                 val before=store.load()
-                val next=link!!.sync(before,scenario,now) {skill->if(!coachingEnabled)AssistanceUsed.NONE else when(learning(skill).support) {
+                val next=link!!.sync(before,scenario,now,finishTrip=!continuingToParking) {skill->if(!coachingEnabled)AssistanceUsed.NONE else when(learning(skill).support) {
                     CoachingSupport.DETAILED->AssistanceUsed.DETAILED
                     CoachingSupport.HINT->AssistanceUsed.BRIEF
                     CoachingSupport.ON_REQUEST->AssistanceUsed.NONE
                 }}
                 if(next!=before && !store.save(next)){fail();return}
                 quest=next;lastKey=key
-                if(next.evidence.size>before.evidence.size)onMilestone(scenario.complete)
+                if(next.evidence.size>before.evidence.size)onMilestone(scenario.complete && !continuingToParking)
             }
         }
+        if(scenario.complete && continuingToParking) {
+            roadMetres=travelledMetres
+            scenario=SimpleRoadScenario(course,RoadLesson.PARKING)
+            scenario.start();lastKey=""
+            onParkingStarted()
+            return
+        }
         if(scenario.complete) {
-            if(!repository.endTrip(tripId!!,now,((scenario.distance-scenario.startDistance)/1000).toFloat(),true)){fail();return}
+            if(!repository.endTrip(tripId!!,now,(travelledMetres/1000).toFloat(),true)){fail();return}
             completedAt=now;finalized=true;paused=true;error=null
         }
     }
@@ -127,7 +141,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
             if(!store.save(next))return fail()
             quest=next
         }
-        if(!repository.endTrip(tripId!!,now,((scenario.distance-scenario.startDistance)/1000).toFloat(),scenario.complete))return fail()
+        if(!repository.endTrip(tripId!!,now,(travelledMetres/1000).toFloat(),scenario.complete && !continuingToParking))return fail()
         finalized=true;return true
     }
     private fun fail(): Boolean {error=repository.lastError ?: "기록을 저장하지 못했어요. 다시 시도해 주세요";paused=true;return false}

@@ -47,7 +47,7 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
         text(c,"차근차근, 오늘의 성장",835f,438f,44f,Palette.ink,true)
         text(c,"이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)
         val good=report?.goodPoints?.let(::JSONArray)
-        text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(3,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,590f,29f)
+        text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(4,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,590f,29f)
         val next=report?.practicePoints?.let(::JSONArray)?.optString(0).orEmpty()
         text(c,next.take(35),835f,805f,27f)
         text(c,"시연 기록은 실제 운전 실력 평가와 구분해요",835f,865f,24f,Color.rgb(101,106,128))
@@ -58,3 +58,4 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
         text(c,value,265f,y+18,46f,Color.rgb(25,29,36),true);text(c,unit,469f,y+57,20f,Color.rgb(25,29,36))
     }
 }
+

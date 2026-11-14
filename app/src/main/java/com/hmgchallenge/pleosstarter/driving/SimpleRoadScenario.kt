@@ -4,16 +4,26 @@ import kotlin.math.*
 
 enum class ScenarioSpeed { REPLAY, VEHICLE }
 enum class RoadLesson(val title: String) {
-    COMBINED("한 차로 변경 → 우회전"), LANE("오른쪽 한 차로 변경"), TURN("3차로에서 우회전"), PARKING("후진 주차 · 가상 연습장")
+    COMBINED("1→2→3차로 · 우회전 · 주차"), LANE("오른쪽 한 차로 변경"), TURN("3차로에서 우회전"), PARKING("후진 주차 · 가상 연습장")
 }
 
 /** Metres along an OSM road centreline. Lane/position are authored, even with SDK speed. */
 class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: RoadLesson = RoadLesson.COMBINED,
                          val source: ScenarioSpeed = ScenarioSpeed.REPLAY) {
     init {require(lesson!=RoadLesson.PARKING || source==ScenarioSpeed.REPLAY)}
-    val course=if(lesson==RoadLesson.PARKING)ParkingLessonGeometry.course() else roadCourse.rounded()
-    val startDistance = if (lesson == RoadLesson.TURN) course.turnDistance - 25.0 else 0.0
-    val endDistance = if (lesson == RoadLesson.LANE) 48.0 else course.length
+    val course=if(lesson==RoadLesson.PARKING)ParkingLessonGeometry.course() else roadCourse.drivingCourse()
+    data class LaneChange(val from: Int,val to: Int,val start: Double,val end: Double)
+    private val changeStart=minOf(90.0,course.turnDistance*.16)
+    private val changeLength=minOf(80.0,course.turnDistance*.14)
+    private val changeGap=minOf(100.0,course.turnDistance*.18)
+    val laneChanges=when(lesson) {
+        RoadLesson.COMBINED->listOf(LaneChange(1,2,changeStart,changeStart+changeLength),
+            LaneChange(2,3,changeStart+changeLength+changeGap,changeStart+2*changeLength+changeGap))
+        RoadLesson.LANE->listOf(LaneChange(2,3,changeStart,changeStart+changeLength))
+        else->emptyList()
+    }
+    val startDistance = if(lesson==RoadLesson.TURN)(course.turnDistance-160).coerceAtLeast(0.0) else 0.0
+    val endDistance = if(lesson==RoadLesson.LANE)laneChanges.last().end+minOf(40.0,course.turnDistance*.1) else course.length
     var distance = startDistance; private set
     var indicator = Indicator.UNKNOWN
     var started = false; private set
@@ -21,8 +31,12 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
     var waitingForSpeed = false; private set
     var parkingWaitMs=0L;private set
     val complete get() = started && distance >= endDistance
-    val laneDone get() = lesson in setOf(RoadLesson.COMBINED,RoadLesson.LANE) && distance >= 42.0
-    val currentLane get() = if (lesson == RoadLesson.TURN || laneDone) 3 else 2
+    val completedLaneChanges get() = laneChanges.count {distance>=it.end}
+    val laneDone get() = laneChanges.isNotEmpty() && completedLaneChanges==laneChanges.size
+    val currentLane get() = laneChanges.getOrNull(completedLaneChanges)?.from ?: 3
+    val nextLaneChange get() = laneChanges.getOrNull(completedLaneChanges)
+    val changingLane get() = nextLaneChange?.let {distance>=it.start}==true
+    val laneChangeProgress get() = nextLaneChange?.let {((distance-it.start)/(it.end-it.start)).coerceIn(0.0,1.0)} ?: 1.0
     val turning get() = lesson in setOf(RoadLesson.COMBINED,RoadLesson.TURN) && distance >= course.turnDistance && !complete
     val parkingGear get()=if(complete || !started)"P" else if(distance<5)"D" else "R"
     val progress get() = (distance-startDistance)/(endDistance-startDistance)
@@ -35,7 +49,17 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
         speedMps = when {
             !started || complete -> 0.0
             lesson==RoadLesson.PARKING -> if(distance<5)3.0/3.6 else 2.0/3.6
-            source == ScenarioSpeed.REPLAY -> if (distance >= course.turnDistance-8) 6.0/3.6 else 8.0/3.6
+            source == ScenarioSpeed.REPLAY -> {
+                val target=when {
+                    lesson==RoadLesson.LANE->40.0/3.6
+                    distance>=course.turnDistance+80->20.0/3.6
+                    distance>=course.turnDistance-30->10.0/3.6
+                    distance>=course.turnDistance-140->20.0/3.6
+                    else->40.0/3.6
+                }
+                val dt=elapsedMs.coerceIn(0,1000)/1000.0
+                target.coerceIn((speedMps-2*dt).coerceAtLeast(0.0),speedMps+1.5*dt)
+            }
             fresh && vehicleMps != null && vehicleMps.isFinite() && vehicleMps >= 0 -> vehicleMps
             else -> 0.0
         }
@@ -57,16 +81,17 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
         lesson==RoadLesson.PARKING -> "핸들을 가운데로 풀고 주차칸에 정렬하세요"
         waitingForSpeed -> "차량 속도 수신을 기다리고 있어요"
         source == ScenarioSpeed.VEHICLE && speedMps == 0.0 -> "정차 중 · 속도가 들어오면 경로가 진행돼요"
-        lesson != RoadLesson.TURN && distance < 12 -> "오른쪽 깜빡이를 켜고 차로 변경을 준비하세요"
+        nextLaneChange!=null && !changingLane -> "오른쪽 깜빡이를 켜고 차로 변경을 준비하세요"
         lesson != RoadLesson.TURN && !laneDone -> "미러·사각지대 확인 후 오른쪽 한 차로 이동하세요"
         lesson == RoadLesson.LANE -> "좋아요! 3차로에 맞춰 직진하세요"
         turning -> "3차로에서 천천히 우회전하세요"
         else -> "3차로 유지 · 전방과 횡단보도를 확인하세요"
     }
     private fun laneOffset(d: Double): Double {
-        if (lesson in setOf(RoadLesson.TURN,RoadLesson.PARKING) || d >= 42) return 0.0
-        val t = ((d-12)/30).coerceIn(0.0,1.0)
-        return -3.5*(1-t*t*t*(10-15*t+6*t*t))
+        if(lesson==RoadLesson.PARKING)return 0.0
+        fun ease(t: Double): Double {val x=t.coerceIn(0.0,1.0);return x*x*x*(10-15*x+6*x*x)}
+        val initial=if(lesson==RoadLesson.COMBINED)-7.0 else if(lesson==RoadLesson.LANE)-3.5 else 0.0
+        return initial+laneChanges.sumOf {3.5*ease((d-it.start)/(it.end-it.start))}
     }
     fun frame(): NavigationSimulationFrame {
         fun point(d: Double) = NavigationSimulationRoute.offset(course.at(d),course.bearing(d),laneOffset(d))
