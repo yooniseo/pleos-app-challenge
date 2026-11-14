@@ -22,6 +22,8 @@ interface CoachDao {
     @Upsert fun saveTrip(value: Trip)
     @Query("SELECT * FROM Trip WHERE tripId=:id") fun trip(id: String): Trip?
     @Query("SELECT * FROM Trip ORDER BY startedAt DESC LIMIT :limit") fun recentTrips(limit: Int): List<Trip>
+    @Query("SELECT * FROM Trip WHERE source=:source AND endedAt IS NOT NULL ORDER BY startedAt DESC LIMIT :limit")
+    fun recentTripsBySource(source: String,limit: Int): List<Trip>
     @Upsert fun saveSample(value: TripSample)
     @Query("SELECT * FROM TripSample WHERE tripId=:id ORDER BY t") fun samples(id: String): List<TripSample>
     @Insert(onConflict=OnConflictStrategy.IGNORE) fun saveNote(value: DrivingNote): Long

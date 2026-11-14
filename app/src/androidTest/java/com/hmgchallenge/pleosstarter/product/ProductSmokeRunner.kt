@@ -25,8 +25,12 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
     private var focusedReal=false
     private var vehicleQuests=false
     private var questDesign=false
-    override fun onCreate(arguments: Bundle?) {questDesign=arguments?.getString("quest_design")=="true";vehicleQuests=arguments?.getString("vehicle_quests")=="true";realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
+    private var analysisMerge=false
+    private var liveConsole: String?=null
+    override fun onCreate(arguments: Bundle?) {liveConsole=arguments?.getString("live_console");analysisMerge=arguments?.getString("analysis_merge")=="true";questDesign=arguments?.getString("quest_design")=="true";vehicleQuests=arguments?.getString("vehicle_quests")=="true";realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
     override fun onStart() {
+        if(liveConsole!=null){runLiveConsoleValidation(liveConsole!!);return}
+        if(analysisMerge){runAnalysisMergeValidation();return}
         if(questDesign){runQuestDesignValidation();return}
         if(vehicleQuests){runVehicleQuestValidation();return}
         val result=Bundle();var activity: ChageunActivity?=null

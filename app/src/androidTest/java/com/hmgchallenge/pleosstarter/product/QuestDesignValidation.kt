@@ -61,19 +61,19 @@ fun Instrumentation.runQuestDesignValidation() {
             check(app.session.completedAt!=null)
         }}
         onMain {
-            app.show(AppScreen.QUESTS)
+            app.showQuestProgress()
             check(app.questDiagnostics()?.size==6)
             check(app.questDiagnostics()?.get("LANE_CHANGE")==6)
-            check(app.window.decorView.findViewWithTag<Button>("quests_vehicle")==null)
+            check(app.window.decorView.findViewWithTag<Button>("quests_vehicle")!=null)
             check(app.vehicleQuests.board.progressOf(com.hmgchallenge.pleosstarter.feature.quests.QuestIds.LANE_CHANGE).steps==0)
-            app.show(AppScreen.MAP);app.show(AppScreen.QUESTS)
+            app.show(AppScreen.MAP);app.showQuestProgress()
             check(app.questDiagnostics()?.get("LANE_CHANGE")==6)
         }
         waitForIdleSync();capture(app,"01-six-lane-replays")
         onMain {app.finish()};waitForIdleSync();activity=null
         repository.close();repository=open();SharedCoachRepository.testOverride=repository
         activity=launch();app=requireNotNull(activity);waitForIdleSync()
-        onMain {app.show(AppScreen.QUESTS);check(app.questDiagnostics()?.get("LANE_CHANGE")==6)}
+        onMain {app.showQuestProgress();check(app.questDiagnostics()?.get("LANE_CHANGE")==6)}
         check(repository.database.openHelper.readableDatabase.query("SELECT progress FROM Quest WHERE questId='demo:practice:LANE_CHANGE'").use {it.moveToFirst() && it.getInt(0)==6})
         proof.put("sixReplays","PASS: 6/30 in UI and Room; no vehicle-signal selector; tab switch and DB reopen preserve progress; VEHICLE remains zero")
         var id="";var combinedAt=0L;var sawApproach=false;var sawTurn=false

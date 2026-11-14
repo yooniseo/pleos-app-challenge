@@ -38,7 +38,7 @@ open class VehicleQuestSmokeRunner: Instrumentation() {
             waitForIdleSync()
             runOnMainSync {
                 activity.show(AppScreen.QUESTS)
-                check(activity.window.decorView.findViewWithTag<Button>("quests_vehicle")==null)
+                check(activity.window.decorView.findViewWithTag<Button>("quests_vehicle")!=null)
             }
             val deadline=SystemClock.elapsedRealtime()+15_000
             var observations=emptyList<com.hmgchallenge.pleosstarter.driving.ApiObservation>()
@@ -52,7 +52,7 @@ open class VehicleQuestSmokeRunner: Instrumentation() {
             capture(activity,File(output,"01-pleos-inputs.png"))
             runOnMainSync {
                 activity.show(AppScreen.MAP);activity.show(AppScreen.QUESTS)
-                check(activity.window.decorView.findViewWithTag<Button>("quests_vehicle")==null)
+                check(activity.window.decorView.findViewWithTag<Button>("quests_vehicle")!=null)
             }
             val controller=VehicleQuestController(targetContext,"SIMULATION")
             check(controller.finish() && !controller.enabled && controller.tripId==null)

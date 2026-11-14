@@ -11,6 +11,7 @@ import com.hmgchallenge.pleosstarter.feature.quests.Signal
 class VehicleTelemetry(private val context: Context) {
     var speedMps: Double?=null; private set
     var speedAt=0L; private set
+    var speedStatus="속도 연결 대기";private set
     private var indicatorValue=Indicator.UNKNOWN
     val indicator get()=if(SystemClock.elapsedRealtime()-indicatorAt in 0..3000)indicatorValue else Indicator.UNKNOWN
     var indicatorAt=0L;private set
@@ -24,7 +25,8 @@ class VehicleTelemetry(private val context: Context) {
     var navigationStatus="내비 API 대기"; private set
     private var source: PleosCoachSource?=null
     private var speed: SpeedSource?=null
-    val fresh get()=speedMps!=null && SystemClock.elapsedRealtime()-speedAt<=5000
+    val fresh get()=VehicleMotion.at(speedMps,speedAt,SystemClock.elapsedRealtime())!=MotionState.UNKNOWN
+    val motion get()=VehicleMotion.at(speedMps,speedAt,SystemClock.elapsedRealtime())
     val stationary get()=fresh && kotlin.math.abs(speedMps ?: Double.NaN)<.1
     fun start() {
         if(!context.packageManager.hasSystemFeature("android.hardware.type.automotive"))return
@@ -43,8 +45,18 @@ class VehicleTelemetry(private val context: Context) {
             onAngle={value->steeringAngle=value;angleAt=SystemClock.elapsedRealtime()},
             onBrake={value->brakePressed=value;brakeAt=SystemClock.elapsedRealtime()},
             onError={questStatus=it},observe={evidence.record(it)}).also {it.start()}
-        if(context.checkSelfPermission("android.car.permission.CAR_SPEED")==android.content.pm.PackageManager.PERMISSION_GRANTED)
-            speed=SpeedSource(context) {value,_->speedMps=value?.toDouble();speedAt=SystemClock.elapsedRealtime()}.also {it.start()}
+        startSpeed()
+    }
+    fun startSpeed() {
+        if(speed!=null)return
+        if(context.checkSelfPermission("android.car.permission.CAR_SPEED")!=android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            speedStatus="차량 속도 권한 필요";return
+        }
+        speed=SpeedSource(context) {value,status->
+            speedMps=value?.toDouble()?.takeIf {it.isFinite()}?.let {kotlin.math.abs(it)}
+            speedAt=SystemClock.elapsedRealtime();speedStatus=status
+            evidence.record(ApiObservation("VEHICLE_SPEED",if(speedMps==null)"MISSING" else "VALUE",mapOf("mps" to speedMps.toString(),"motion" to motion.name,"status" to status)))
+        }.also {it.start()}
     }
     fun questInput()=VehicleQuestInput(
         when(indicator){Indicator.RIGHT->Signal.RIGHT;Indicator.LEFT->Signal.LEFT;Indicator.OFF->Signal.OFF;else->null},indicatorAt,

@@ -29,6 +29,8 @@ class VehicleQuestController(context: Context,val source: String="VEHICLE") {
     private var currentMonotonic=0L
     private var currentWall=0L
     private var lastRetry=0L
+    private var lastStillAt=0L
+    private var lastStillWall=0L
     private data class Pending(val id: String,val tripId: String,val attempt: Attempt)
     private var pending: Pending?=null
     private val detector=ManeuverDetector {attempt->
@@ -55,29 +57,39 @@ class VehicleQuestController(context: Context,val source: String="VEHICLE") {
         val speed=input.speedMps?.takeIf {it.isFinite() && it>=0 && fresh(now,input.speedAt)}
         val signal=input.signal?.takeIf {it!=Signal.UNKNOWN && fresh(now,input.signalAt)}
         val angle=input.angle?.takeIf {it.isFinite() && fresh(now,input.angleAt)}
-        if(speed==null || signal==null || angle==null) {
-            detector.reset();lastAt=now
-            status=when {speed==null->"속도 미수신 · 판정 대기";signal==null->"깜빡이 미확인 · 판정 대기";else->"조향각 미수신 · 판정 대기"}
+        // 주행 기록(속도 샘플)은 속도만 있으면 남긴다. 깜빡이·조향각은 퀘스트 판정에만 필요하다.
+        if(speed==null) {
+            detector.reset();lastAt=now;status="속도 미수신 · 판정 대기"
             return
         }
         if(speed<=.1 && !detector.inProgress) {
             tripId?.takeIf {lastSample==0L || now-lastSample>=1000}?.let {id->
                 repository.sample(id,wall,0f,(metres/1000).toFloat());lastSample=now
             }
+            if(tripId==null){lastStillAt=input.speedAt;lastStillWall=wall-(now-input.speedAt)}
             detector.reset();lastAt=now;status="정차 중 · 주행 신호를 기다려요"
             return
         }
         if(tripId==null) {
             val id=UUID.randomUUID().toString()
-            if(!repository.beginVehicleQuestTrip(id,wall,source)) {
+            // 출발 직전 정차 값을 첫 샘플로 남겨야 급출발(0 → 이동)을 판단할 수 있다.
+            val seeded=lastStillAt>0 && now-lastStillAt in 0..1500
+            if(!repository.beginVehicleQuestTrip(id,if(seeded)lastStillWall else wall,source)) {
                 error=repository.lastError;lastAt=now;detector.reset();return
             }
             tripId=id;metres=0.0;lastSample=0L
+            if(seeded){repository.sample(id,lastStillWall,0f,0f);lastSample=lastStillAt}
+            lastStillAt=0L
         }
         if(lastAt>0 && now-lastAt in 1..1000)metres+=speed*(now-lastAt)/1000
         lastAt=now
         if(lastSample==0L || now-lastSample>=1000) {
             repository.sample(tripId!!,wall,(speed*3.6).toFloat(),(metres/1000).toFloat());lastSample=now
+        }
+        if(signal==null || angle==null) {
+            detector.reset()
+            status=if(signal==null)"주행 기록 중 · 깜빡이 미확인이라 퀘스트 판정 대기" else "주행 기록 중 · 조향각 미수신이라 퀘스트 판정 대기"
+            return
         }
         detector.onSignal(now,signal)
         if(input.brake!=null && fresh(now,input.brakeAt))detector.onBrake(now,input.brake) else detector.onBrakeMissing()

@@ -20,6 +20,11 @@ class ChageunActivity: Activity() {
     private val repository by lazy {SharedCoachRepository.get(this)}
     lateinit var session: ReplaySessionController; private set
     lateinit var vehicleQuests: VehicleQuestController;private set
+    private var vehicleQuestView=false
+    private var recommendView=true
+    private var recommendationSource="VEHICLE"
+    private var recommendationObserver: java.io.Closeable?=null
+    private var vehicleFinishButton: Button?=null
     private var pendingVehicleSpeech: String?=null
     private lateinit var art: ProductIllustrations
     private lateinit var telemetry: VehicleTelemetry
@@ -77,10 +82,31 @@ class ChageunActivity: Activity() {
     override fun onStart() {
         super.onStart();if(!::session.isInitialized)return
         active=true;lastTick=SystemClock.elapsedRealtime();telemetry.start()
+        recommendationObserver=repository.observe {key->
+            if(key in setOf("note","trip","report","vehicle-quests","quest:demo")) {
+                handler.removeCallbacks(refreshRecommendations);handler.postDelayed(refreshRecommendations,200)
+            }
+        }
+        if(packageManager.hasSystemFeature("android.hardware.type.automotive") && checkSelfPermission("android.car.permission.CAR_SPEED")!=android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            val permission=runCatching {packageManager.getPermissionInfo("android.car.permission.CAR_SPEED",0)}.getOrNull()
+            if(permission?.protection==android.content.pm.PermissionInfo.PROTECTION_DANGEROUS)requestPermissions(arrayOf("android.car.permission.CAR_SPEED"),834)
+        }
         celebration=ScenarioCelebration(this,{active && telemetry.stationary},{celebrationStatus=it}).also {it.start()}
         if(packageManager.hasSystemFeature("android.hardware.type.automotive"))voice=PleosCoachVoice(this,{voiceStatus=it},{speechEvidence.record(it)}).also {it.start()}
         handler.post(loop)
     }
+    private val refreshRecommendations=Runnable {if(active && screen==AppScreen.QUESTS && recommendView)show(AppScreen.QUESTS)}
+    private fun vehicleHeadline()=when(telemetry.motion) {
+        MotionState.MOVING->"차량 주행 중 · ${((telemetry.speedMps ?: 0.0)*3.6).toInt()}km/h"
+        MotionState.STOPPED->"차량 정차 중 · 0km/h"
+        MotionState.UNKNOWN->"차량 속도 확인 중"
+    }
+    private fun vehicleSignalLabel()="SDK 깜빡이 · "+when(telemetry.indicator) {
+        Indicator.RIGHT->"오른쪽 ON"
+        Indicator.LEFT->"왼쪽 ON"
+        Indicator.OFF->"OFF"
+        Indicator.UNKNOWN->"미수신"
+    }+if(vehicleQuests.tripId!=null)" · 기록 중" else ""
     private val loop=object: Runnable {
         override fun run() {
             if(!active)return
@@ -91,16 +117,20 @@ class ChageunActivity: Activity() {
             if(screen!=AppScreen.PARKING || s.lesson==RoadLesson.PARKING)map?.setFrame(s.course,s.frame(),s.lesson==RoadLesson.PARKING)
             (canvas as? DriveCanvas)?.apply {
                 coachEnabled=coach
+                vehicleLine=vehicleHeadline()
+                vehicleDetail=vehicleSignalLabel()
                 val live=vehicleQuests.coachMessageUntil>now
                 message=if(live)vehicleQuests.coachMessage else milestoneText
                 messageUntil=if(live)vehicleQuests.coachMessageUntil else milestoneUntil
             }
             (canvas as? QuestCanvas)?.apply {state=session.quest;points=this@ChageunActivity.points}
+            (canvas as? VehicleQuestCanvas)?.input=telemetry.questInput()
             canvas?.invalidate()
             startButton?.text=when {s.complete->"다시 시연";s.started && !session.paused->"진행 중";s.started->"재개";else->"자동 시연 시작"}
             startButton?.isEnabled=!emptyPreview && (!s.started || session.paused || s.complete)
             pauseButton?.isEnabled=s.started && !s.complete && !session.paused
             cancelButton?.isEnabled=s.started && !s.complete
+            vehicleFinishButton?.isEnabled=vehicleQuests.tripId!=null && telemetry.motion==MotionState.STOPPED
             if(session.completedAt!=null && completionShown!=session.tripId) {
                 completionShown=session.tripId;selectedTrip=session.tripId
                 if(s.lesson==RoadLesson.PARKING)show(AppScreen.FEEDBACK)
@@ -118,15 +148,19 @@ class ChageunActivity: Activity() {
     }
     fun show(destination: AppScreen) {
         if(destination==AppScreen.QUESTS)session.refresh()
-        screen=destination;startButton=null;pauseButton=null;cancelButton=null;map=null
+        screen=destination;startButton=null;pauseButton=null;cancelButton=null;vehicleFinishButton=null;map=null
         val drawing: android.view.View=when(destination) {
             AppScreen.MAP->{
                 val layers=FrameLayout(this)
                 map=ScenarioRoadMapView(this,art).apply {tilted=mapTilted;showCautions=true;setFrame(session.scenario.course,session.scenario.frame(),session.scenario.lesson==RoadLesson.PARKING)}
-                canvas=DriveCanvas(this,art,session).apply {coachEnabled=coach;compactQuestBanner=this@ChageunActivity.compactQuestBanner;tilted=mapTilted;toolsExpanded=this@ChageunActivity.toolsExpanded}
+                canvas=DriveCanvas(this,art,session).apply {coachEnabled=coach;compactQuestBanner=this@ChageunActivity.compactQuestBanner;tilted=mapTilted;toolsExpanded=this@ChageunActivity.toolsExpanded;vehicleLine=vehicleHeadline();vehicleDetail=vehicleSignalLabel()}
                 layers.addView(map,FrameLayout.LayoutParams(-1,-1));layers.addView(canvas,FrameLayout.LayoutParams(-1,-1));layers
             }
-            AppScreen.QUESTS->QuestCanvas(this,art).also {canvas=it;it.state=session.quest;it.points=points}
+            AppScreen.QUESTS->if(recommendView)RecommendationCanvas(this,art).also {
+                canvas=it;it.result=repository.recommendations(recommendationSource)
+                it.sourceLabel=when(recommendationSource){"REPLAY"->"DEMO · 자동 시연 메모 기준";"SIMULATION"->"TEST · 가상 신호 기록 기준";else->"Pleos 차량 주행 기록 기준"}
+            }else if(vehicleQuestView)VehicleQuestCanvas(this,art,vehicleQuests).also {canvas=it;it.input=telemetry.questInput()}
+            else QuestCanvas(this,art).also {canvas=it;it.state=session.quest;it.points=points}
             AppScreen.PARKING->{
                 val layers=FrameLayout(this)
                 val s=session.scenario.takeIf {it.lesson==RoadLesson.PARKING} ?: SimpleRoadScenario(session.course,RoadLesson.PARKING)
@@ -140,6 +174,7 @@ class ChageunActivity: Activity() {
                 val id=selectedTrip ?: session.tripId ?: repository.trips().firstOrNull {it.endedAt!=null}?.tripId
                 val feedback=CompletionCanvas(this,art).apply {
                     trip=id?.let(repository::trip);report=id?.let(repository::report);state=session.quest
+                    scores=id?.let(repository::scores)
                     complete=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)?.optString("status")=="COMPLETE" && repository.events(id).any {it.type=="PRACTICE_REWARD" && JSONObject(it.payload).optString("skill")=="PARKING"}
                     earned=id?.let(repository::tripPoints) ?: 0
                     completed=id?.let {repository.completedSkills(it).size} ?: 0
@@ -177,22 +212,37 @@ class ChageunActivity: Activity() {
                     scene.button("닫기","tools_close",463f,391f,110f,48f){openSimulationTools(false)}
                 }
                 if(coach)scene.button("설명 더 보기","coach_help",1195f,620f,390f,60f){help()}
-                scene.button("","map_quest_banner",1095f,905f,560f,170f){show(AppScreen.QUESTS)}.apply {
+                scene.button("","map_quest_banner",1095f,905f,560f,170f){showQuestProgress()}.apply {
                     background=null;elevation=0f;contentDescription="이번 시연 퀘스트 진행도 보기"
                 }
             }
             AppScreen.QUESTS->{
-                scene.button("★ 퀘스트 계속하기","quest_continue",555f,965f,600f,80f,true){show(if(session.scenario.lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP);if(!session.scenario.started || session.paused)start()}
-                scene.button("초기화","quest_reset",1435f,178f,195f,70f){resetQuests()}
-                com.hmgchallenge.pleosstarter.quests.ProductQuestCatalog.all.forEachIndexed {i,quest->
-                    val b=scene.button("", "quest_card_$i",65f+(i%3)*540,315f+(i/3)*300,510f,268f){
-                        when(quest.skill) {
-                            com.hmgchallenge.pleosstarter.quests.CoachSkill.PREPARATION->if(session.tripId==null || session.scenario.complete)start()else checklist(quest.skill)
-                            com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH->checklist(quest.skill)
-                            else->select(RoadLesson.valueOf(quest.lesson!!))
+                scene.button("맞춤 퀘스트","quests_recommend",70f,228f,290f,58f,recommendView){showRecommendations(recommendationSource)}
+                scene.button("종합 기록","quests_demo",380f,228f,290f,58f,!recommendView && !vehicleQuestView){showQuestProgress()}
+                scene.button("차량 연결","quests_vehicle",690f,228f,290f,58f,vehicleQuestView){showVehicleQuests()}
+                if(recommendView) {
+                    scene.button("기준: ${when(recommendationSource){"REPLAY"->"시연 메모";"SIMULATION"->"가상 신호 TEST";else->"차량 주행"}}","recommend_source",1100f,228f,505f,58f){chooseRecommendationSource()}
+                    repository.recommendations(recommendationSource).recommendations.forEachIndexed {i,q->
+                        scene.button("","recommend_card_$i",620f,300f+i*190f,1015f,170f){recommendationDetails(q)}.apply {
+                            background=null;elevation=0f;contentDescription="${q.title} · ${q.reason} · 자세히 보기"
                         }
                     }
-                    b.background=null;b.elevation=0f;b.contentDescription="${quest.title} · ${session.quest.practiceCount(quest.skill)}회"
+                    scene.button("차량 신호 퀘스트","recommend_to_vehicle",850f,985f,350f,68f){showVehicleQuests()}
+                    scene.button("지도로 돌아가기","recommend_to_map",1240f,985f,360f,68f,true){show(AppScreen.MAP)}
+                }else if(vehicleQuestView) {
+                    scene.button(if(vehicleQuests.enabled)"주행 기록 마치기" else "차량 연결 시작","vehicle_finish",1240f,940f,360f,68f,true){toggleVehicleRecording()}
+                }else {
+                    scene.button("★ 퀘스트 계속하기","quest_continue",555f,965f,600f,80f,true){show(if(session.scenario.lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP);if(!session.scenario.started || session.paused)start()}
+                    scene.button("초기화","quest_reset",1435f,178f,195f,70f){resetQuests()}
+                    com.hmgchallenge.pleosstarter.quests.ProductQuestCatalog.all.forEachIndexed {i,quest->
+                        scene.button("", "quest_card_$i",65f+(i%3)*540,315f+(i/3)*300,510f,268f){
+                            when(quest.skill) {
+                                com.hmgchallenge.pleosstarter.quests.CoachSkill.PREPARATION->if(session.tripId==null || session.scenario.complete)start()else checklist(quest.skill)
+                                com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH->checklist(quest.skill)
+                                else->select(RoadLesson.valueOf(quest.lesson!!))
+                            }
+                        }.apply {background=null;elevation=0f;contentDescription="${quest.title} · ${session.quest.practiceCount(quest.skill)}회"}
+                    }
                 }
             }
             AppScreen.PARKING->{
@@ -203,37 +253,85 @@ class ChageunActivity: Activity() {
                 }
             }
             AppScreen.FEEDBACK->{
-                scene.button("지난 기록","records_history",790f,190f,270f,90f){history()}
-                scene.button("어려웠어요","feedback_difficult",1110f,190f,270f,90f){
-                    val id=vehicleFeedbackId()
-                    if(id!=null) {
-                        if(repository.addNote(id,"어려웠어요 · 차량 신호 조건 연습","OTHER",null,true,source=repository.trip(id)!!.source)) {
-                            toast("오늘의 어려움을 기록했어요");show(screen)
-                        }else toast(repository.lastError ?: "저장 실패")
-                    }else if((selectedTrip==null || selectedTrip==session.tripId) && session.note(true))toast("다음 연습은 차근차근 도와드릴게요")else toast("현재 연습 기록에서 남길 수 있어요")
+                if(vehicleQuests.tripId!=null)vehicleFinishButton=scene.button("차량 주행 기록 마치기","vehicle_record_finish",790f,305f,490f,68f){
+                    if(telemetry.motion!=MotionState.STOPPED)toast("정차 후 주행 기록을 마칠 수 있어요")
+                    else {
+                        val id=vehicleQuests.tripId
+                        if(vehicleQuests.finish()){vehicleQuests.resume();if(id!=null)showFeedback(id)}else toast(vehicleQuests.error ?: "저장 실패")
+                    }
                 }
+                scene.button("지난 기록","records_history",790f,190f,270f,90f){history()}
+                scene.button("어려웠어요","feedback_difficult",1110f,190f,270f,90f){chooseDifficultArea()}
                 scene.button("메모 남기기","feedback_memo",1410f,190f,230f,90f){
-                    val id=vehicleFeedbackId()
-                    if(id!=null) {
-                        memo=DrivingMemoDialog(this,{text,category,difficult->
-                            val skill=when(category){"LANE_CHANGE"->"LANE_CHANGE";"RIGHT_TURN"->"INTERSECTION";"PARKING"->"PARKING";else->null}
-                            repository.addNote(id,text,category,skill,difficult,source=repository.trip(id)!!.source)
-                        },{memo=null;show(screen)}).also {it.show("OTHER")}
-                    }else if(session.tripId==null || (selectedTrip!=null && selectedTrip!=session.tripId))toast("현재 연습을 시작한 뒤 메모할 수 있어요")
-                    else memo=DrivingMemoDialog(this,{text,category,difficult->session.memo(text,category,difficult)},{memo=null;show(screen)}).also {it.show("OTHER")}
+                    if(feedbackTripId()==null)toast("주행 기록을 남긴 뒤 메모할 수 있어요")
+                    else memo=DrivingMemoDialog(this,{text,category,difficult->saveFeedbackNote(text,category,difficult)},{memo=null;show(screen)}).also {it.show("OTHER")}
+                }
+                scene.button("맞춤 퀘스트","feedback_recommend",1010f,970f,290f,90f){
+                    val id=selectedTrip ?: session.tripId ?: repository.trips().firstOrNull {it.endedAt!=null}?.tripId
+                    showRecommendations(id?.let(repository::trip)?.source ?: "VEHICLE")
                 }
                 scene.button("다음 연습","feedback_next",1320f,970f,280f,90f,true){chooseLesson()}
                 if(vehicleFeedbackId()==null && session.completedAt!=null && session.scenario.lesson==RoadLesson.PARKING && (selectedTrip==null || selectedTrip==session.tripId)) {
-                    scene.button("하차 준비 확인","departure_checklist",790f,970f,480f,90f){checklist(com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH)}
+                    scene.button("하차 준비 확인","departure_checklist",790f,970f,200f,90f){checklist(com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH)}
                 }
             }
         }
         // These destinations are always available; no separate navy/white application tasks.
         val names=listOf("지도 · 주행 코치","퀘스트","주차 가이드","주행 피드백")
-        AppScreen.values().forEachIndexed {i,dest->scene.button(names[i],"tab_${dest.name}",25f+420*i,1100f,390f,70f,dest==screen){show(dest)}}
+        AppScreen.values().forEachIndexed {i,dest->scene.button(names[i],"tab_${dest.name}",25f+420*i,1100f,390f,70f,dest==screen){if(dest==AppScreen.QUESTS)showRecommendations(recommendationSource)else show(dest)}}
         setContentView(scene)
     }
-    fun openSimulationTools(open: Boolean=true) {toolsExpanded=open;show(AppScreen.MAP)}
+    private fun feedbackTripId()=selectedTrip ?: session.tripId ?: repository.trips().firstOrNull {it.endedAt!=null}?.tripId
+    fun saveFeedbackNote(text: String,category: String,difficult: Boolean): Boolean {
+        val id=feedbackTripId() ?: return false
+        val skill=when(category){"LANE_CHANGE"->"LANE_CHANGE";"RIGHT_TURN","LEFT_TURN"->"INTERSECTION";"PARKING"->"PARKING";"SPEED_CONTROL"->"SPEED";else->null}
+        val scenario=repository.snapshot("trip:$id")?.let(::JSONObject)?.optBoolean("scenario")==true
+        val source=if(repository.trip(id)?.source=="VEHICLE" && !scenario)"VEHICLE" else "SIMULATION"
+        val value=if(difficult && !text.startsWith("어려웠어요"))"어려웠어요 · $text" else text
+        val saved=repository.addNote(id,value,category,skill,difficult,source=source)
+        if(saved)session.refresh()
+        return saved
+    }
+    private fun chooseDifficultArea() {
+        if(feedbackTripId()==null){toast("주행 기록을 남긴 뒤 선택해 주세요");return}
+        val areas=listOf("차선 변경" to "LANE_CHANGE","우회전" to "RIGHT_TURN","후진 주차" to "PARKING","속도 조절" to "SPEED_CONTROL")
+        AlertDialog.Builder(this).setTitle("어떤 상황이 어려웠나요?").setItems(areas.map {it.first}.toTypedArray()){_,i->
+            if(saveFeedbackNote(areas[i].first,areas[i].second,true)){toast("다음 맞춤 퀘스트에 반영할게요");show(screen)}else toast(repository.lastError ?: "저장 실패")
+        }.setNegativeButton("닫기",null).show()
+    }
+    fun showVehicleQuests() {vehicleQuestView=true;recommendView=false;show(AppScreen.QUESTS)}
+    private fun toggleVehicleRecording() {
+        if(!vehicleQuests.enabled){vehicleQuests.resume();show(screen);return}
+        val id=vehicleQuests.tripId
+        if(id!=null && telemetry.motion!=MotionState.STOPPED){toast("정차 후 주행 기록을 마칠 수 있어요");return}
+        if(vehicleQuests.finish()){if(id!=null)showFeedback(id)else show(screen)}else toast(vehicleQuests.error ?: "저장 실패")
+    }
+    fun showQuestProgress() {vehicleQuestView=false;recommendView=false;show(AppScreen.QUESTS)}
+    fun showRecommendations(source: String="VEHICLE") {
+        require(source in setOf("VEHICLE","REPLAY","SIMULATION"))
+        recommendationSource=source;vehicleQuestView=false;recommendView=true;show(AppScreen.QUESTS)
+    }
+    fun recommendationDiagnostics()=(canvas as? RecommendationCanvas)?.result
+    private fun chooseRecommendationSource() {
+        AlertDialog.Builder(this).setTitle("맞춤 퀘스트 기준")
+            .setItems(arrayOf("Pleos 차량 주행 기록","자동 시연 메모 · 운전 점수 없음")){_,i->showRecommendations(if(i==0)"VEHICLE" else "REPLAY")}
+            .setNegativeButton("닫기",null).show()
+    }
+    private fun recommendationDetails(q: com.hmgchallenge.pleosstarter.analysis.Recommendation) {
+        val lesson=when(q.weakness) {
+            "TURN_SIGNAL"->RoadLesson.LANE
+            "TURN_SLOWDOWN","LEFT_TURN","U_TURN"->if(q.weakness=="TURN_SLOWDOWN")RoadLesson.TURN else null
+            "PARKING"->RoadLesson.PARKING
+            "SMOOTH_ACCEL","BRAKING"->RoadLesson.COMBINED
+            else->null
+        }
+        val message="${q.reason}\n\n${q.goal}\n\n"+if(recommendationSource=="REPLAY")"시연 메모로 고른 연습입니다. 자동 시연 완료는 실제 운전 숙련도나 차량 퀘스트 달성으로 기록하지 않습니다." else "주행 신호로 확인 가능한 조건만 기록합니다. 차로 위치·차간거리·주변 안전을 자동으로 확인한 결과는 아닙니다."
+        val dialog=AlertDialog.Builder(this).setTitle(q.title).setMessage(message).setNegativeButton("닫기",null)
+        if(lesson!=null)dialog.setPositiveButton("관련 자동 시연 보기"){_,_->select(lesson)}
+        else dialog.setPositiveButton("확인",null)
+        dialog.show()
+    }
+    fun openSimulationTools(open: Boolean=true) {toolsExpanded=open;if(!open)setIndicator(null);show(AppScreen.MAP)}
     fun toggleMapView() {mapTilted=!mapTilted;saveSettings();show(AppScreen.MAP)}
     fun toggleQuestBannerStyle() {compactQuestBanner=!compactQuestBanner;saveSettings();show(AppScreen.MAP)}
     fun navigationDiagnostics()=map?.diagnostics()
@@ -302,6 +400,7 @@ class ChageunActivity: Activity() {
     fun select(lesson: RoadLesson,source: ScenarioSpeed=ScenarioSpeed.REPLAY) {
         voice?.stop()
         if(!session.select(lesson,source)){toast(session.error ?: "기록 저장 실패");return}
+        if(source==ScenarioSpeed.VEHICLE)session.indicatorOverride=null
         selectedTrip=null;show(if(lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP)
     }
     private fun chooseLesson() {
@@ -330,7 +429,7 @@ class ChageunActivity: Activity() {
     private fun resetQuests() {
         if(session.scenario.started && !session.scenario.complete){toast("진행 중인 연습을 먼저 마쳐 주세요");return}
         AlertDialog.Builder(this).setTitle("시연 퀘스트를 처음부터?").setMessage("현재 시연 성장·포인트를 0으로 시작해요. 지난 주행 기록과 개인 기록은 유지돼요.")
-            .setPositiveButton("초기화"){_,_->if(session.resetProgress()){points=0;show(AppScreen.QUESTS)}else toast(session.error ?: "초기화 실패")}.setNegativeButton("취소",null).show()
+            .setPositiveButton("초기화"){_,_->if(session.resetProgress()){points=0;showQuestProgress()}else toast(session.error ?: "초기화 실패")}.setNegativeButton("취소",null).show()
     }
     private fun history() {
         val trips=repository.trips().filter {it.endedAt!=null}
@@ -340,7 +439,7 @@ class ChageunActivity: Activity() {
     }
     override fun onStop() {
         memo?.dismiss();memo=null
-        active=false;handler.removeCallbacks(loop)
+        active=false;handler.removeCallbacks(loop);handler.removeCallbacks(refreshRecommendations);recommendationObserver?.close();recommendationObserver=null
         if(::session.isInitialized)session.pause()
         if(::vehicleQuests.isInitialized) {
             vehicleQuests.suspendInputs()
@@ -354,8 +453,10 @@ class ChageunActivity: Activity() {
     fun voiceDiagnostics()=speechEvidence.snapshot()
     fun vehicleDiagnostics()=telemetry.diagnostics()
     fun vehicleInput()=telemetry.questInput()
+    fun liveDrivingDiagnostics()=mapOf("motion" to telemetry.motion.name,"speedMps" to telemetry.speedMps.toString(),"speedStatus" to telemetry.speedStatus,"sdkIndicator" to telemetry.indicator.name,"coachIndicator" to session.scenario.indicator.name,"indicatorInput" to if(session.indicatorOverride==null)"SDK" else "SIMULATION","tripId" to vehicleQuests.tripId.orEmpty(),"recordingStatus" to vehicleQuests.status)
     fun showFeedback(tripId: String) {
         require(repository.trip(tripId)!=null)
+        if(tripId==session.tripId && session.completedAt!=null)completionShown=tripId
         selectedTrip=tripId;show(AppScreen.FEEDBACK)
     }
     private fun vehicleFeedbackId(): String? {
@@ -364,6 +465,7 @@ class ChageunActivity: Activity() {
     }
     override fun onRequestPermissionsResult(requestCode: Int,permissions: Array<out String>,grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        if(requestCode==834 && grantResults.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED)telemetry.startSpeed()
         memo?.onPermissionResult(requestCode,grantResults.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED)
     }
     override fun onBackPressed(){if(screen!=AppScreen.MAP)show(AppScreen.MAP)else super.onBackPressed()}

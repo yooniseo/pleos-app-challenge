@@ -2,6 +2,8 @@ package com.hmgchallenge.pleosstarter.ui
 
 import android.content.Context
 import android.graphics.*
+import com.hmgchallenge.pleosstarter.analysis.DrivingSkill
+import com.hmgchallenge.pleosstarter.analysis.TripScores
 import com.hmgchallenge.pleosstarter.core.data.entity.Trip
 import com.hmgchallenge.pleosstarter.core.data.entity.TripReport
 import com.hmgchallenge.pleosstarter.quests.QuestState
@@ -19,6 +21,9 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
     var complete=false
     var vehicleRecord=false
     var recordSource="DEMO  |  시연용 가상 기록"
+    var scores: TripScores?=null
+    private fun short(skill: DrivingSkill)=when(skill){DrivingSkill.SMOOTH_ACCEL->"출발";DrivingSkill.BRAKING->"감속";DrivingSkill.TURN_SIGNAL->"깜빡이";DrivingSkill.TURN_SLOWDOWN->"회전감속"}
+    private fun fit(value: String,max: Int)=if(value.length<=max)value else value.take(max-1)+"…"
     override fun drawScene(c: Canvas) {
         if(trip==null) {
             c.drawColor(Color.rgb(239,242,250))
@@ -48,11 +53,21 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
         text(c,"© OpenStreetMap contributors · OSRM",69f,1054f,18f,Palette.cream)
         box(c,790f,400f,810f,540f,Color.argb(243,255,255,255),36f)
         text(c,"차근차근, 오늘의 성장",835f,438f,44f,Palette.ink,true)
-        text(c,if(vehicleRecord)"신호 조건 충족 $completed / $target" else "이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)
         val good=report?.goodPoints?.let(::JSONArray)
-        text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(6,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,580f,25f)
-        val next=report?.practicePoints?.let(::JSONArray)?.optString(0).orEmpty()
-        text(c,next.take(35),835f,805f,27f)
+        val nextAll=report?.practicePoints?.let(::JSONArray)
+        val s=scores
+        if(vehicleRecord && s!=null) {
+            // 차량 주행 기록: 분석 요약 · 기술별 점수 · 잘한 점 2개 · 연습할 점 2개
+            wrappedText(c,report?.headline.orEmpty(),835f,505f,740f,29f,Palette.purple,true)
+            text(c,DrivingSkill.values().joinToString("  ·  ") {"${short(it)} ${s.scores[it]?.toString() ?: "—"}"}+if(s.lowConfidence)"  (짧은 주행·참고용)" else "",835f,592f,23f,Palette.ink,true)
+            text(c,if(good==null)"" else (0 until minOf(2,good.length())).joinToString("\n") {"✓ "+fit(good.getString(it),30)},835f,640f,26f)
+            text(c,if(nextAll==null)"" else (0 until minOf(2,nextAll.length())).joinToString("\n") {"• "+fit(nextAll.getString(it),31)},835f,735f,25f,Color.rgb(125,29,32))
+        }else {
+            text(c,if(vehicleRecord)"신호 조건 충족 $completed / $target" else "이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)
+            text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(6,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,580f,25f)
+            text(c,nextAll?.optString(0).orEmpty().take(35),835f,805f,27f)
+        }
+
         text(c,if(vehicleRecord)"신호 조건 기록이며 실제 차로 이동 검증은 별도예요" else "시연 기록은 실제 운전 실력 평가와 구분해요",835f,865f,24f,Color.rgb(101,106,128))
     }
     private fun metric(c: Canvas,y: Float,en: String,ko: String,value: String,unit: String) {

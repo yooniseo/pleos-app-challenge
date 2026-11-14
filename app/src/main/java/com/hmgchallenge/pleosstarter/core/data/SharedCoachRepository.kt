@@ -3,6 +3,7 @@ package com.hmgchallenge.pleosstarter.core.data
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.hmgchallenge.pleosstarter.analysis.*
 import com.hmgchallenge.pleosstarter.core.data.entity.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -192,23 +193,70 @@ class SharedCoachRepository(val database: TripDatabase) {
     };notify(key);true}.getOrElse {lastError=it.cause?.message ?: it.message;false}
     private fun buildReport(id: String,at: Long) {
         val samples=dao.samples(id);val notes=dao.notes(id);val practice=dao.tripCompletions(id)
-        val review=SpeedReview.analyze(samples.map {SpeedReview.Sample(it.t,it.speedKmh?.toDouble())})
-        dao.clearSpeedEvents(id,"$id:speed:%");dao.saveSpeedEvents(review.mapIndexed {i,e->TripEvent("$id:speed:$i",id,e.type,e.at,1,e.delta.toFloat())})
-        val good=practice.groupBy {it.skill}.map {(skill,records)->when(skill){"LANE_CHANGE"->"한 차로 이동 연습 ${records.size}회";"INTERSECTION"->"우회전 연습 완료";"PARKING"->"후진 주차·정렬 연습 완료";"PREPARATION"->"출발 점검 직접 확인";"SPEED"->"교차로 감속 시연 완료 · 차간거리 판정 별도";"FINISH"->"하차 점검 직접 확인";else->"$skill 연습 기록"}}.toMutableList()
+        val trip=dao.trip(id)
         val attempts=dao.events(id).filter {it.type=="VEHICLE_QUEST_ATTEMPT"}.map {
             com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.decodeAttempt(it.payload)
         }
+        // 분석: 팀 SpeedReview 기준 + 심각도·3초 병합, 깜빡이·회전 전 감속은 차량 신호 퀘스트 시도에서 계산
+        val analysis=DrivingAnalyzer.analyze(samples.map {SpeedReview.Sample(it.t,it.speedKmh?.toDouble())},attempts)
+        dao.clearSpeedEvents(id,"$id:speed:%")
+        dao.saveSpeedEvents(analysis.events.mapIndexed {i,e->TripEvent("$id:speed:$i",id,e.type,e.t,e.severity,e.deltaKmh.toFloat())})
+        val good=practice.groupBy {it.skill}.map {(skill,records)->when(skill){"LANE_CHANGE"->"한 차로 이동 연습 ${records.size}회";"INTERSECTION"->"우회전 연습 완료";"PARKING"->"후진 주차·정렬 연습 완료";"PREPARATION"->"출발 점검 직접 확인";"SPEED"->"교차로 감속 시연 완료 · 차간거리 판정 별도";"FINISH"->"하차 점검 직접 확인";else->"$skill 연습 기록"}}.toMutableList()
         attempts.filter {it.success}.groupBy {it.questId}.forEach {(questId,records)->
             val title=com.hmgchallenge.pleosstarter.feature.quests.QuestCatalog.find(questId)?.title.orEmpty()
             good.add("$title 신호 조건을 ${records.size}회 충족했어요")
         }
         if(notes.any {it.category=="STEERING"})good.add("핸들 따라하기에서 직접 목표를 맞췄어요")
-        val next=notes.filter {it.rawText.startsWith("어려웠어요")}.map {it.rawText.removePrefix("어려웠어요 · ")}.toMutableList()
-        attempts.filterNot {it.success}.takeLast(3).forEach {next.add(it.result.message)}
-        if(review.isNotEmpty())next.add("속도 변화가 컸던 ${review.size}개 구간을 당시 상황과 함께 돌아보세요")
-        if(good.isEmpty())good.add("완료 전 기록이에요. 이어서 연습할 수 있어요")
-        if(next.isEmpty())next.add("다음 연습에서는 도움을 한 단계 줄여볼 수 있어요")
-        dao.saveReport(TripReport(id,at,"차근차근 · ${practice.size}개 동작 연습 기록",JSONArray(good).toString(),JSONArray(next).toString(),"{}"))
+        val next=attempts.filterNot {it.success}.takeLast(3).map {it.result.message}.toMutableList()
+        // 자동 시연(REPLAY)은 정해진 속도로 움직이므로 실력 점수를 매기지 않고 기존 문구를 유지한다.
+        val replay=trip?.source=="REPLAY" || dao.snapshot("trip:$id")?.value?.let(::JSONObject)?.optBoolean("scenario")==true
+        if(replay && analysis.events.isNotEmpty())next.add("속도 변화가 컸던 ${analysis.events.size}개 구간을 당시 상황과 함께 돌아보세요")
+        val feedback=FeedbackWriter.write(analysis.takeUnless {replay},
+            notes.filter {it.category!="STEERING"}.map {NoteLine(it.t,it.rawText,it.category)},good,next)
+        dao.saveReport(TripReport(id,at,if(replay)"차근차근 · ${practice.size}개 동작 연습 기록" else feedback.headline,
+            JSONArray(feedback.good).toString(),JSONArray(feedback.next).toString(),if(replay)"{}" else scoresJson(analysis)))
+    }
+
+    /**
+     * 최근 주행(같은 출처)의 점수·메모와 차량 신호 퀘스트 진행으로 맞춤 퀘스트를 고른다.
+     * 저장하지 않고 볼 때마다 다시 계산한다: 리포트·메모·퀘스트 진행이 바뀌면 추천도 바로 따라간다.
+     */
+    fun recommendations(source: String="VEHICLE"): RecommendationResult=io {computeRecommendations(source)}
+    /** 저장된 점수를 다시 읽는다. 예전 리포트("{}")는 모든 점수가 null. */
+    fun scores(id: String): TripScores?=io {
+        val trip=dao.trip(id);val report=dao.report(id)
+        if(trip==null || report==null)null else parseScores(trip,report.skillScores)
+    }
+    private fun computeRecommendations(source: String): RecommendationResult {
+        val trips=dao.recentTripsBySource(source,100).filterNot {
+            source=="VEHICLE" && dao.snapshot("trip:${it.tripId}")?.value?.let(::JSONObject)?.optBoolean("scenario")==true
+        }.take(QuestRecommender.RECENT_TRIPS)
+        val scored=trips.mapNotNull {trip->dao.report(trip.tripId)?.let {parseScores(trip,it.skillScores)}}
+        val difficultyIds=trips.flatMap {dao.events(it.tripId)}.filter {it.type=="DIFFICULTY"}.map {it.id}.toSet()
+        val notes=trips.flatMap {dao.notes(it.tripId)}.filter {it.rawText.startsWith("어려웠어요") || it.noteId in difficultyIds}.map {
+            when(it.category){"INTERSECTION"->"RIGHT_TURN";"SPEED"->"SPEED_CONTROL";else->it.category}
+        }
+        val board=com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.decode(dao.snapshot("vehicle-quests:$source")?.value)
+        val vehicle=com.hmgchallenge.pleosstarter.feature.quests.QuestCatalog.all.associate {q->
+            val p=board.progressOf(q.questId)
+            q.questId to VehicleProgress(p.level,p.steps,com.hmgchallenge.pleosstarter.feature.quests.QuestProgress.STEPS_PER_LEVEL)
+        }
+        val result=QuestRecommender.recommend(scored,notes,vehicle)
+        // Authored replays can recommend practice from the driver's notes, never award physical skill scores.
+        return if(source=="REPLAY")result.copy(recommendations=result.recommendations.map {q->
+            q.copy(kind=RecommendationKind.PRACTICE,progress=0,target=0,vehicleQuestId=null)
+        })else result
+    }
+    private fun scoresJson(a: TripAnalysis)=JSONObject().apply {
+        a.scores.forEach {(skill,score)->put(skill.name,score ?: JSONObject.NULL)}
+        put("lowConfidence",a.lowConfidence);put("measuredSeconds",a.measuredSeconds)
+        put("harshAccel",a.harshAccelCount);put("harshBrake",a.harshBrakeCount)
+        put("signalAttempts",a.signalAttempts);put("signalSuccesses",a.signalSuccesses)
+    }.toString()
+    private fun parseScores(trip: Trip,json: String): TripScores {
+        val root=runCatching {JSONObject(json)}.getOrDefault(JSONObject())
+        val scores=DrivingSkill.values().associateWith {s->if(root.has(s.name) && !root.isNull(s.name))root.optInt(s.name) else null}
+        return TripScores(trip.tripId,trip.startedAt,scores,root.optBoolean("lowConfidence",true))
     }
     private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
     private fun JSONArray.strings()=(0 until length()).map {getString(it)}

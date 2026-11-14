@@ -9,6 +9,8 @@ import kotlin.math.*
 /** Only the application window is rendered here. OEM speed/status/climate remain system owned. */
 class DriveCanvas(context: Context,assets: ProductIllustrations,private val session: ReplaySessionController): SceneCanvas(context,assets) {
     private val wheel=SteeringWheelRenderer()
+    var vehicleLine="차량 연결 대기"
+    var vehicleDetail=""
     var coachEnabled=true
     var compactQuestBanner=false
     var tilted=true
@@ -21,6 +23,9 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
         val g=BeginnerScenarioCoach.guidance(s,session.learning().style)
         val hud=NavigationHudModel.from(s,session.totalTripMetres,session.travelledMetres,session.continuingToParking)
         navigation(c,hud)
+        card(c,650f,59f,430f,103f,Color.WHITE,25f)
+        text(c,vehicleLine,672f,72f,28f,Palette.ink,true)
+        text(c,vehicleDetail.take(24),672f,117f,20f,Color.GRAY)
         card(c,1591f,59f,68f,68f,Color.WHITE,20f)
         text(c,if(tilted)"2D" else "3D",1608f,65f,20f,Color.BLACK,true)
         assets.figma?.draw(c,"map_pointer",RectF(1612f,97f,1638f,119f))
