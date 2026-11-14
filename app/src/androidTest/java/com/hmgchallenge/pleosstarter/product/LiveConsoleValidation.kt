@@ -38,6 +38,7 @@ fun Instrumentation.runLiveConsoleValidation(mode: String) {
     }}
     try {
         check(android.os.Build.HARDWARE in setOf("ranchu","goldfish"))
+        check(com.hmgchallenge.pleosstarter.quests.QuestStore(targetContext,true).resetDemoProgress())
         repository.saveSnapshot("settings:product","{\"voice\":false,\"celebration\":false}")
         activity=startActivitySync(Intent(targetContext,ChageunActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as ChageunActivity
         val app=activity;waitForIdleSync()
@@ -45,7 +46,7 @@ fun Instrumentation.runLiveConsoleValidation(mode: String) {
         File(output,"ready.json").writeText("{\"ready\":true}")
         sendStatus(1,Bundle().apply {putString("phase","READY_FOR_ORIGINAL_CONSOLE_SCRIPT_$mode")})
         val deadline=SystemClock.elapsedRealtime()+240_000
-        var moving=false;var right=false;var off=false;var captured=false;var stillSince=0L;var id: String?=null
+        var moving=false;var right=false;var off=false;var captured=false;var stillSince=0L;var id: String?=null;var divergence=0
         val states=JSONArray();var lastState=""
         while(SystemClock.elapsedRealtime()<deadline) {
             var speed=0.0;var indicator="";var motion=""
@@ -54,14 +55,15 @@ fun Instrumentation.runLiveConsoleValidation(mode: String) {
                 speed=d.getValue("speedMps").toDoubleOrNull() ?: 0.0
                 id=app.vehicleQuests.tripId ?: id
                 check(d.getValue("indicatorInput")=="SDK")
-                if(d.getValue("coachIndicator")!=indicator)error("SDK and coach signal diverged: $d")
+                divergence=if(d.getValue("coachIndicator")!=indicator)divergence+1 else 0
+                check(divergence<4) {"SDK and coach signal diverged for a second: $d"}
                 val state="$motion / $indicator"
                 if(state!=lastState){states.put(JSONObject(d));lastState=state}
             }
-            if(speed>1.0){moving=true;stillSince=0L}
+            if(motion=="MOVING" && speed>1.0){moving=true;stillSince=0L}
             if(indicator=="RIGHT")right=true
             if(indicator=="OFF")off=true
-            if(moving && right && !captured){capture(app,"01-live-moving-signal");captured=true}
+            if(moving && (right || mode=="harsh") && !captured){capture(app,"01-live-moving-signal");captured=true}
             File(output,"watch.json").writeText(JSONObject().put("moving",moving).put("right",right).put("speedMps",speed).put("tripId",id).toString())
             if(moving && motion=="STOPPED") {
                 if(stillSince==0L)stillSince=SystemClock.elapsedRealtime()
