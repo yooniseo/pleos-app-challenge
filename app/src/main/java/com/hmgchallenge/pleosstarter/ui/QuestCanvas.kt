@@ -30,6 +30,6 @@ class QuestCanvas(context: Context,assets: ProductIllustrations): SceneCanvas(co
             wrappedText(c,quest.detail,x+26,y+208,460f,22f,color,false)
         }
         text(c,"출발·하차는 직접 확인 · 속도 기록만으로 실제 차간거리를 판정하지 않아요",110f,920f,25f,Palette.ink)
-        text(c,"DEMO · 시연 연습 ${state.evidence.size}회 · 실제 차량 기록은 별도로 보관해요",300f,1060f,24f,Palette.ink,true)
+        text(c,"DEMO · 누적 시연 연습 ${state.evidence.size}회",560f,1060f,24f,Palette.ink,true)
     }
 }
