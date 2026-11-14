@@ -64,7 +64,7 @@ fun Instrumentation.runQuestDesignValidation() {
             app.showQuestProgress()
             check(app.questDiagnostics()?.size==6)
             check(app.questDiagnostics()?.get("LANE_CHANGE")==6)
-            check(app.window.decorView.findViewWithTag<Button>("quests_vehicle")!=null)
+            check(app.window.decorView.findViewWithTag<Button>("quests_vehicle")==null)
             check(app.vehicleQuests.board.progressOf(com.hmgchallenge.pleosstarter.feature.quests.QuestIds.LANE_CHANGE).steps==0)
             app.show(AppScreen.MAP);app.showQuestProgress()
             check(app.questDiagnostics()?.get("LANE_CHANGE")==6)
@@ -105,7 +105,7 @@ fun Instrumentation.runQuestDesignValidation() {
                 val scenario=app.session.scenario
                 if(scenario.lesson==RoadLesson.COMBINED && !sawApproach && scenario.frame().turnRemaining in 40.0..100.0) {
                     sawApproach=true;captureApproach=true;app.show(AppScreen.MAP)
-                }else if(scenario.turning && !sawTurn) {sawTurn=true;captureTurn=true;app.show(AppScreen.MAP)}
+                }else if(scenario.lesson==RoadLesson.COMBINED && scenario.frame().turnRemaining in 1.0..24.0 && !sawTurn) {sawTurn=true;captureTurn=true;app.show(AppScreen.MAP)}
             }
             waitForIdleSync()
             if(captureApproach)capture(app,"02-mascot-approach")

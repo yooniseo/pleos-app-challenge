@@ -32,6 +32,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
     var selectedLesson=RoadLesson.COMBINED; private set
     private var roadMetres=0.0
     private var selectedSpeed=ScenarioSpeed.REPLAY
+    val usesReplaySpeed get()=selectedSpeed==ScenarioSpeed.REPLAY
     var totalTripMetres=scenario.endDistance-scenario.startDistance+ParkingLessonGeometry.course().length;private set
     val travelledMetres get()=roadMetres+scenario.distance-scenario.startDistance
     val continuingToParking get()=selectedLesson==RoadLesson.COMBINED && scenario.lesson==RoadLesson.COMBINED

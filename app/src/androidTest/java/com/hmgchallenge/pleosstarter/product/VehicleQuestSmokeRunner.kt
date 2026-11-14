@@ -37,8 +37,8 @@ open class VehicleQuestSmokeRunner: Instrumentation() {
             val activity=app
             waitForIdleSync()
             runOnMainSync {
-                activity.show(AppScreen.QUESTS)
-                check(activity.window.decorView.findViewWithTag<Button>("quests_vehicle")!=null)
+                check(activity.screen==AppScreen.MAP)
+                check(activity.window.decorView.findViewWithTag<Button>("quests_vehicle")==null)
             }
             val deadline=SystemClock.elapsedRealtime()+15_000
             var observations=emptyList<com.hmgchallenge.pleosstarter.driving.ApiObservation>()
@@ -52,11 +52,10 @@ open class VehicleQuestSmokeRunner: Instrumentation() {
             capture(activity,File(output,"01-pleos-inputs.png"))
             runOnMainSync {
                 activity.show(AppScreen.MAP);activity.show(AppScreen.QUESTS)
-                check(activity.window.decorView.findViewWithTag<Button>("quests_vehicle")!=null)
+                check(activity.window.decorView.findViewWithTag<Button>("quests_vehicle")==null)
             }
             val controller=VehicleQuestController(targetContext,"SIMULATION")
-            check(controller.finish() && !controller.enabled && controller.tripId==null)
-            controller.resume()
+            check(controller.finish() && controller.tripId==null)
             val initialQuestRows=repository.questRows()
             var now=10_000L
             val epoch=System.currentTimeMillis()
@@ -81,8 +80,6 @@ open class VehicleQuestSmokeRunner: Instrumentation() {
             check(controller.board.progressOf(QuestIds.INTERSECTION_RIGHT).steps==1)
             check(cues.size==2 && cues.all {it.contains("기록했어요")})
             proof.put("coach",JSONArray(cues))
-            runOnMainSync {activity.setContentView(VehicleQuestCanvas(activity,ProductIllustrations(),controller))}
-            waitForIdleSync();capture(activity,File(output,"02-test-one-thirtieth.png"))
             attempt(Signal.OFF,6f,false)
             attempt(Signal.LEFT,6f,false)
             attempt(Signal.RIGHT,6f,false,500)

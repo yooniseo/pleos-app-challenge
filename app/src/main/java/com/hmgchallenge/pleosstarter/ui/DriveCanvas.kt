@@ -34,11 +34,14 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
         if(toolsExpanded) {
             box(c,53f,385f,543f,260f,Color.WHITE)
             text(c,"깜빡이 비교 · 시연 도구",78f,400f,26f,Palette.ink,true)
-            text(c,"입력: ${if(session.indicatorOverride==null)"SDK" else "시연"} · ${s.indicator}",78f,594f,22f)
+            text(c,"입력: ${if(session.indicatorOverride!=null || session.usesReplaySpeed && s.started && !session.paused)"시연" else "SDK"} · ${s.indicator}",78f,594f,22f)
         }
         if(coachEnabled) {
-            if(!parking && s.started && !s.complete && (s.turning || s.distance>=s.course.turnDistance-130)) {
-                val imminent=s.frame().turnRemaining<=30
+            val laneReminder=s.nextLaneChange?.let {s.distance in (it.start-45)..it.start}==true
+            val turnReminder=s.lesson in setOf(RoadLesson.COMBINED,RoadLesson.TURN) &&
+                s.distance in (s.course.turnDistance-130)..s.course.turnDistance
+            if(s.started && !s.complete && (laneReminder || turnReminder)) {
+                val imminent=turnReminder && s.course.turnDistance-s.distance<=30
                 val left=if(imminent)980f else 955f
                 val width=if(imminent)675f else 700f
                 val scale=width/if(imminent)675f else 804f
@@ -47,8 +50,8 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
                 if(imminent)assets.figma?.draw(c,"caution",RectF(69f,22f,139f,167f))
                 else assets.mascot(c,RectF(45f,20f,195f,170f))
                 val tx=if(imminent)169f else 255f
-                text(c,"우회전 하기 전!",tx,36f,40f,Color.BLACK)
-                text(c,"보행자를 확인하세요",tx,84f,55f,Color.BLACK,true)
+                text(c,if(laneReminder)"차선변경 전!" else "우회전 하기 전!",tx,36f,40f,Color.BLACK)
+                text(c,if(laneReminder)"사이드미러 확인하세요" else "보행자를 확인하세요",tx,84f,55f,Color.BLACK,true)
                 c.restore()
             }
             box(c,1120f,270f,535f,420f,Color.argb(244,255,255,255),32f)
@@ -107,7 +110,7 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
     private fun maneuver(c: Canvas,cue: HudCue,b: RectF,small: Boolean) {
         when(cue.maneuver) {
             HudManeuver.TURN->assets.figma?.draw(c,if(small)"nav_turn_next" else "nav_turn",b)
-            HudManeuver.LANE->assets.figma?.draw(c,"quest_flag_outline",b)
+            HudManeuver.LANE,HudManeuver.STRAIGHT->assets.figma?.draw(c,"nav_straight",b)
             else->text(c,when(cue.maneuver){HudManeuver.PARKING->"P";HudManeuver.FINISH->"✓";else->"↑"},b.left,b.top,if(small)54f else 83f,if(small)Color.BLACK else Palette.purple,true)
         }
     }

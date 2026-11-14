@@ -15,7 +15,7 @@ class RecommendationCanvas(context: Context,assets: ProductIllustrations): Scene
         c.drawColor(Color.rgb(197,216,255));assets.hills(c)
         text(c,"맞춤 추천 퀘스트",72f,70f,59f,Palette.ink,true)
         val r=result
-        text(c,"$sourceLabel · 최근 ${r?.tripCount ?: 0}번 기록의 "+if(sourceLabel.startsWith("DEMO"))"어려움 메모로 골랐어요" else "점수와 메모로 골랐어요",76f,174f,27f,Palette.ink)
+        text(c,"$sourceLabel · 최근 ${r?.tripCount ?: 0}번 기록의 "+if(sourceLabel.startsWith("DEMO"))"연습 내용과 메모로 골랐어요" else "점수와 메모로 골랐어요",76f,174f,27f,Palette.ink)
 
         // 왼쪽: 기술별 최근 평균 점수
         box(c,65f,300f,520f,560f,Color.WHITE,36f)
@@ -51,7 +51,7 @@ class RecommendationCanvas(context: Context,assets: ProductIllustrations): Scene
                 box(c,1330f,y+139f,270f*q.progress.coerceAtMost(q.target)/q.target,14f,Palette.purple,7f)
             }
         }
-        text(c,"추천 기준: 평균 70점 미만 · 최근 5번 중 3번 이상 70점 미만 · 같은 어려움 메모 2건 이상",76f,905f,23f,Palette.ink)
+        text(c,if(sourceLabel.startsWith("DEMO"))"어렵다고 남긴 동작을 우선하고, 메모가 없으면 마친 시연에서 다음 연습을 골라요" else "추천 기준: 평균 70점 미만 · 최근 5번 중 3번 이상 70점 미만 · 같은 어려움 메모 2건 이상",76f,905f,23f,Palette.ink)
         text(c,"점수는 속도·차량 신호로 계산한 연습 참고값이에요. 실제 도로 상황 판단은 운전자가 직접 해요",76f,950f,22f,Color.rgb(101,106,128))
     }
 }

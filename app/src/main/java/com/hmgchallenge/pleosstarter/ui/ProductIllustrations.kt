@@ -97,8 +97,8 @@ class ProductIllustrations(context: Context?=null) {
         c.restore()
     }
     fun crossing(c: Canvas,r: RectF) {
-        fill(Color.rgb(249,250,255));val gap=r.width()/15
-        repeat(15){i->c.drawRect(r.left+i*gap,r.top,r.left+i*gap+gap*.52f,r.bottom,p)}
+        fill(Color.rgb(249,250,255));val stripes=(r.width()/.8f).toInt().coerceAtLeast(1);val gap=r.width()/stripes
+        repeat(stripes){i->c.drawRect(r.left+i*gap,r.top,r.left+i*gap+gap*.52f,r.bottom,p)}
     }
     fun completionPanel(c: Canvas) {
         fill(Color.rgb(23,27,35));c.drawPath(Path().apply {moveTo(0f,0f);lineTo(686f,0f);lineTo(615f,1184f);lineTo(0f,1184f);close()},p)

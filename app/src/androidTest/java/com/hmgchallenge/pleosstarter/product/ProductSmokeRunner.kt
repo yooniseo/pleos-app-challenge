@@ -23,12 +23,14 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
     private lateinit var output: File
     private var realTime=false
     private var focusedReal=false
+    private var mirrorTest: String?=null
     private var vehicleQuests=false
     private var questDesign=false
     private var analysisMerge=false
     private var liveConsole: String?=null
-    override fun onCreate(arguments: Bundle?) {liveConsole=arguments?.getString("live_console");analysisMerge=arguments?.getString("analysis_merge")=="true";questDesign=arguments?.getString("quest_design")=="true";vehicleQuests=arguments?.getString("vehicle_quests")=="true";realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
+    override fun onCreate(arguments: Bundle?) {mirrorTest=arguments?.getString("mirror");liveConsole=arguments?.getString("live_console");analysisMerge=arguments?.getString("analysis_merge")=="true";questDesign=arguments?.getString("quest_design")=="true";vehicleQuests=arguments?.getString("vehicle_quests")=="true";realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
     override fun onStart() {
+        if(mirrorTest!=null){runMirrorValidation(mirrorTest=="combined");return}
         if(liveConsole!=null){runLiveConsoleValidation(liveConsole!!);return}
         if(analysisMerge){runAnalysisMergeValidation();return}
         if(questDesign){runQuestDesignValidation();return}

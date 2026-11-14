@@ -1,8 +1,7 @@
 ﻿# Demo 1: harsh start/accel + 2 harsh brakes (~2.5 min) via Pleos Virtual Console.
 # Expected: feedback "smooth start / braking" scores drop -> recommends
 #   "앞차와 3초 거리 두기" / "3초 세며 천천히 출발하기".
-# Before running: app open -> 퀘스트 -> 차량 신호 퀘스트 -> button must read "주행 기록 마치기"
-#                 (if it reads "차량 연결 시작", press it first).
+# Open the map. Vehicle quest recording starts automatically on fresh moving speed.
 param([string]$Adb = "C:\Android\Sdk\platform-tools\adb.exe")
 
 & $Adb forward tcp:8088 tcp:8088 | Out-Null
@@ -23,7 +22,7 @@ try {
     "harsh brake 38 -> 18";  Hold 18 20
     foreach ($v in 12, 6, 0) { Hold $v 1 }; Hold 0 2
     curl.exe -s -o NUL -X PUT "$B/vehicle/gear?gear=Park"
-    "done - now press the finish-recording button in the app"
+    "parked - open driving feedback or personalized quests"
 } finally {
     Stop-Job $hb; Remove-Job $hb
 }

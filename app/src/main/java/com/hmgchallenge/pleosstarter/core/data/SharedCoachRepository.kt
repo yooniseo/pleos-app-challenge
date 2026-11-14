@@ -144,6 +144,11 @@ class SharedCoachRepository(val database: TripDatabase) {
         val meta=dao.snapshot("trip:$id")?.value?.let(::JSONObject) ?: JSONObject()
         meta.put("status",if(complete)"COMPLETE" else "INTERRUPTED")
         dao.saveSnapshot(AppSnapshot("trip:$id",meta.toString(),at));buildReport(id,at)
+        if(complete && meta.optString("speedSource")=="REPLAY") {
+            val plan=replayPractice(meta.optString("lesson"),null)
+            if(plan!=null)dao.saveEvent(CoachingEvent("$id:next-practice",id,"NEXT_PRACTICE",at,"SIMULATION",
+                JSONObject().put("lesson",meta.getString("lesson")).put("recommendationId",plan.id).put("skill",plan.weakness).toString()))
+        }
     }
     fun addNote(id: String,text: String,category: String,skill: String?,difficult: Boolean,at: Long=System.currentTimeMillis(),contextJson: String?=null,source: String="SIMULATION"): Boolean=write("note") {
         require(source in setOf("SIMULATION","VEHICLE"))
@@ -242,10 +247,36 @@ class SharedCoachRepository(val database: TripDatabase) {
             q.questId to VehicleProgress(p.level,p.steps,com.hmgchallenge.pleosstarter.feature.quests.QuestProgress.STEPS_PER_LEVEL)
         }
         val result=QuestRecommender.recommend(scored,notes,vehicle)
-        // Authored replays can recommend practice from the driver's notes, never award physical skill scores.
-        return if(source=="REPLAY")result.copy(recommendations=result.recommendations.map {q->
+        if(source!="REPLAY")return result
+        val practice=result.recommendations.map {q->
             q.copy(kind=RecommendationKind.PRACTICE,progress=0,target=0,vehicleQuestId=null)
-        })else result
+        }.ifEmpty {
+            val last=trips.firstNotNullOfOrNull {trip->
+                dao.events(trip.tripId).firstOrNull {it.type=="NEXT_PRACTICE"}?.payload?.let(::JSONObject)
+                    ?: dao.snapshot("trip:${trip.tripId}")?.value?.let(::JSONObject)?.takeIf {it.optString("status")=="COMPLETE"}
+            }
+            listOfNotNull(replayPractice(last?.optString("lesson"),notes.firstOrNull {it in setOf("LANE_CHANGE","RIGHT_TURN","LEFT_TURN","U_TURN","PARKING","SPEED_CONTROL")}))
+        }
+        return result.copy(recommendations=practice)
+    }
+
+    private fun replayPractice(lesson: String?,difficulty: String?): Recommendation? {
+        if(lesson==null)return null
+        val topic=difficulty ?: when(lesson) {
+            "LANE"->"LANE_CHANGE"
+            "TURN"->"RIGHT_TURN"
+            "PARKING","COMBINED"->"PARKING"
+            else->return null
+        }
+        val (skill,title,goal)=when(topic) {
+            "LANE_CHANGE"->Triple("TURN_SIGNAL","차로를 바꾸기 전 준비하기","방향지시등을 켜고 미러와 사각지대를 확인해 보세요")
+            "RIGHT_TURN"->Triple("TURN_SLOWDOWN","우회전 전 횡단보도 살피기","우회전 연습에서 감속과 주변 확인 순서를 익혀 보세요")
+            "SPEED_CONTROL"->Triple("BRAKING","교차로 전에 서서히 감속하기","코치 안내를 들으며 감속을 시작하는 지점을 찾아보세요")
+            "LEFT_TURN","U_TURN"->Triple(topic,if(topic=="LEFT_TURN")"좌회전 준비하기" else "유턴 준비하기","다음 주행 전 경로에서 해당 구간을 미리 살펴보세요")
+            else->Triple("PARKING","후진 주차 핸들 복원 연습","주차 시연에서 차체가 정렬될 때 핸들을 푸는 순간을 확인해 보세요")
+        }
+        val reason=if(difficulty!=null)"최근 어렵다고 남긴 상황을 다음 연습으로 골랐어요" else "방금 마친 시연에서 다음에 직접 익혀 볼 동작이에요"
+        return Recommendation("REPLAY_$skill",skill,title,goal,reason,RecommendationKind.PRACTICE,0,0)
     }
     private fun scoresJson(a: TripAnalysis)=JSONObject().apply {
         a.scores.forEach {(skill,score)->put(skill.name,score ?: JSONObject.NULL)}

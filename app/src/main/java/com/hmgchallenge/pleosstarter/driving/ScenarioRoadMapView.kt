@@ -61,12 +61,35 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
         for(d in listOf(route.turnDistance-8,route.turnDistance+54)) {
             val pos=local(route.at(d));c.save();c.translate(pos.x,pos.y)
             c.rotate((route.bearing(d)-route.bearing(0.0)).toFloat())
-            art.crossing(c,RectF(-9f,-1.6f,9f,1.6f))
+            // The route origin is the middle of lane three on approach, then a single connector lane.
+            val crossing=if(d<route.turnDistance)RectF(-8.75f,-1.6f,1.75f,1.6f) else RectF(-1.75f,-1.6f,1.75f,1.6f)
+            art.crossing(c,crossing)
             c.restore()
         }
         stroke(path(route.points),Color.rgb(169,186,229),1.2f)
         stroke(path(f.planned),Color.rgb(165,196,255),1.9f)
         stroke(path(f.planned),Color.rgb(64,127,242),.92f)
+        // The authored route follows lane 3 at the junction; adjacent approach lanes continue straight.
+        for(distance in listOf(route.turnDistance-38,route.turnDistance-18)) {
+            val bearing=route.bearing(distance)
+            for(lane in 1..3) {
+                val mark=local(NavigationSimulationRoute.offset(route.at(distance),bearing,(lane-3)*3.5))
+                c.save()
+                c.translate(mark.x,mark.y)
+                c.rotate((bearing-route.bearing(0.0)).toFloat())
+                val arrow=Path().apply {
+                    moveTo(0f,2f)
+                    if(lane==3) {
+                        lineTo(0f,-.8f);lineTo(1.15f,-.8f)
+                        moveTo(.45f,-1.5f);lineTo(1.15f,-.8f);lineTo(.45f,-.1f)
+                    } else {
+                        lineTo(0f,-2f);moveTo(-.8f,-1f);lineTo(0f,-2f);lineTo(.8f,-1f)
+                    }
+                }
+                stroke(arrow,Color.WHITE,.36f)
+                c.restore()
+            }
+        }
         c.restore()
         if(showCautions && f.turnRemaining<=140 && f.distance<=route.turnDistance+30) {
             val warning=local(route.at(route.turnDistance+14))
@@ -84,7 +107,7 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
         c.save();c.translate(width*.52f,height*.70f);c.rotate((f.bearing-route.bearing(0.0)).toFloat())
         val w=width*.085f;val h=w/1.047f
         art.car(c,RectF(-w/2,-h/2,w/2,h/2));c.restore()
-        p.typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL);p.textSize=width*.018f;p.color=Color.rgb(94,100,121)
+        p.style=Paint.Style.FILL;p.typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL);p.textSize=width*.018f;p.color=Color.rgb(94,100,121)
         // The host draws attribution in a reserved HUD slot, above the navigation tabs.
         c.drawText(if(f.distance<route.turnDistance)"창룡대로" else "대학로",width*.40f,height*.61f,p)
     }

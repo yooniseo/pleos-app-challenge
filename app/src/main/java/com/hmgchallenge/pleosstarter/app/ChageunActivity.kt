@@ -20,7 +20,11 @@ class ChageunActivity: Activity() {
     private val repository by lazy {SharedCoachRepository.get(this)}
     lateinit var session: ReplaySessionController; private set
     lateinit var vehicleQuests: VehicleQuestController;private set
-    private var vehicleQuestView=false
+    private val mirrorAvailable by lazy {
+        ReplayConsole.supported(this) && (SharedCoachRepository.testOverride==null || intent.getBooleanExtra("verify_console",false))
+    }
+    private var vehicleMovedInGear=false
+    private var mirroredFrame: ReplayControls?=null
     private var recommendView=true
     private var recommendationSource="VEHICLE"
     private var recommendationObserver: java.io.Closeable?=null
@@ -77,10 +81,20 @@ class ChageunActivity: Activity() {
             if(done)celebration?.celebrate(celebrationEnabled) else celebration?.ding(celebrationEnabled)
         }
         session.onParkingStarted={voice?.stop();show(AppScreen.PARKING)}
-        points=repository.points("demo");show(AppScreen.MAP)
+        recommendationSource=repository.trips().firstOrNull {it.endedAt!=null && it.source in setOf("REPLAY","VEHICLE")}?.source ?: "VEHICLE"
+        points=repository.points("demo");openRequestedScreen(intent)
+    }
+    private fun openRequestedScreen(request: android.content.Intent) {
+        if(request.getStringExtra("open_screen")=="QUESTS")showRecommendations(recommendationSource)
+        else show(AppScreen.MAP)
+    }
+    override fun onNewIntent(request: android.content.Intent) {
+        super.onNewIntent(request)
+        if(::session.isInitialized && request.hasExtra("open_screen"))openRequestedScreen(request)
     }
     override fun onStart() {
         super.onStart();if(!::session.isInitialized)return
+        handler.removeCallbacks(reverseCameraReplay)
         active=true;lastTick=SystemClock.elapsedRealtime();telemetry.start()
         recommendationObserver=repository.observe {key->
             if(key in setOf("note","trip","report","vehicle-quests","quest:demo")) {
@@ -111,20 +125,40 @@ class ChageunActivity: Activity() {
         override fun run() {
             if(!active)return
             val now=SystemClock.elapsedRealtime();session.tick(now-lastTick,now,telemetry.speedMps,telemetry.fresh);lastTick=now
-            session.updateIndicator(telemetry.indicator)
-            vehicleQuests.update(telemetry.questInput(),now)
             val s=session.scenario
+            val replay=s.started && !session.paused && !s.complete && session.usesReplaySpeed
+            val frame=if(replay) ReplayControls.from(s,session.indicatorOverride) else null
+            session.updateIndicator(frame?.signal ?: telemetry.indicator)
+            if(mirrorAvailable && frame!=mirroredFrame) {
+                mirroredFrame=frame
+                ReplayConsole.update(frame)
+            }
+            if(!mirrorAvailable || !ReplayConsole.filtersVehicleInput(telemetry.speedAt)) {
+                val previousTrip=vehicleQuests.tripId
+                vehicleQuests.update(telemetry.questInput(),now)
+                if(vehicleQuests.tripId!=null && celebration?.gear in setOf("D","R"))vehicleMovedInGear=true
+                if(vehicleMovedInGear && vehicleQuests.tripId!=null && celebration?.gear=="P" && telemetry.motion==MotionState.STOPPED) {
+                    val finished=vehicleQuests.tripId
+                    if(vehicleQuests.finish()) {
+                        vehicleMovedInGear=false
+                        if(screen==AppScreen.FEEDBACK && finished!=null)showFeedback(finished)
+                    }
+                }
+                if(previousTrip==null && vehicleQuests.tripId!=null) {
+                    recommendationSource="VEHICLE"
+                    if(screen==AppScreen.FEEDBACK || screen==AppScreen.QUESTS && recommendView)show(screen)
+                }
+            }
             if(screen!=AppScreen.PARKING || s.lesson==RoadLesson.PARKING)map?.setFrame(s.course,s.frame(),s.lesson==RoadLesson.PARKING)
             (canvas as? DriveCanvas)?.apply {
                 coachEnabled=coach
-                vehicleLine=vehicleHeadline()
-                vehicleDetail=vehicleSignalLabel()
+                vehicleLine=if(frame!=null)"시연 주행 · ${frame.speed}km/h" else vehicleHeadline()
+                vehicleDetail=if(frame!=null)"${if(frame.signal==Indicator.RIGHT)"오른쪽 ON" else if(frame.signal==Indicator.LEFT)"왼쪽 ON" else "깜빡이 OFF"} · ${if(mirrorAvailable)ReplayConsole.status else "시연"}" else vehicleSignalLabel()
                 val live=vehicleQuests.coachMessageUntil>now
                 message=if(live)vehicleQuests.coachMessage else milestoneText
                 messageUntil=if(live)vehicleQuests.coachMessageUntil else milestoneUntil
             }
             (canvas as? QuestCanvas)?.apply {state=session.quest;points=this@ChageunActivity.points}
-            (canvas as? VehicleQuestCanvas)?.input=telemetry.questInput()
             canvas?.invalidate()
             startButton?.text=when {s.complete->"다시 시연";s.started && !session.paused->"진행 중";s.started->"재개";else->"자동 시연 시작"}
             startButton?.isEnabled=!emptyPreview && (!s.started || session.paused || s.complete)
@@ -133,6 +167,7 @@ class ChageunActivity: Activity() {
             vehicleFinishButton?.isEnabled=vehicleQuests.tripId!=null && telemetry.motion==MotionState.STOPPED
             if(session.completedAt!=null && completionShown!=session.tripId) {
                 completionShown=session.tripId;selectedTrip=session.tripId
+                recommendationSource=repository.trip(session.tripId!!)?.source ?: "REPLAY"
                 if(s.lesson==RoadLesson.PARKING)show(AppScreen.FEEDBACK)
                 else {milestoneText="주행 연습 완료 · 주차 가이드에서 이어가세요";milestoneUntil=now+8000}
             }
@@ -158,9 +193,8 @@ class ChageunActivity: Activity() {
             }
             AppScreen.QUESTS->if(recommendView)RecommendationCanvas(this,art).also {
                 canvas=it;it.result=repository.recommendations(recommendationSource)
-                it.sourceLabel=when(recommendationSource){"REPLAY"->"DEMO · 자동 시연 메모 기준";"SIMULATION"->"TEST · 가상 신호 기록 기준";else->"Pleos 차량 주행 기록 기준"}
-            }else if(vehicleQuestView)VehicleQuestCanvas(this,art,vehicleQuests).also {canvas=it;it.input=telemetry.questInput()}
-            else QuestCanvas(this,art).also {canvas=it;it.state=session.quest;it.points=points}
+                it.sourceLabel=when(recommendationSource){"REPLAY"->"DEMO · 자동 시연 기록";"SIMULATION"->"TEST · 가상 신호 기록 기준";else->"Pleos 차량 주행 기록 기준"}
+            }else QuestCanvas(this,art).also {canvas=it;it.state=session.quest;it.points=points}
             AppScreen.PARKING->{
                 val layers=FrameLayout(this)
                 val s=session.scenario.takeIf {it.lesson==RoadLesson.PARKING} ?: SimpleRoadScenario(session.course,RoadLesson.PARKING)
@@ -218,19 +252,15 @@ class ChageunActivity: Activity() {
             }
             AppScreen.QUESTS->{
                 scene.button("맞춤 퀘스트","quests_recommend",70f,228f,290f,58f,recommendView){showRecommendations(recommendationSource)}
-                scene.button("종합 기록","quests_demo",380f,228f,290f,58f,!recommendView && !vehicleQuestView){showQuestProgress()}
-                scene.button("차량 연결","quests_vehicle",690f,228f,290f,58f,vehicleQuestView){showVehicleQuests()}
+                scene.button("종합 기록","quests_demo",380f,228f,290f,58f,!recommendView){showQuestProgress()}
                 if(recommendView) {
-                    scene.button("기준: ${when(recommendationSource){"REPLAY"->"시연 메모";"SIMULATION"->"가상 신호 TEST";else->"차량 주행"}}","recommend_source",1100f,228f,505f,58f){chooseRecommendationSource()}
+                    scene.button("기준: ${when(recommendationSource){"REPLAY"->"시연 기록";"SIMULATION"->"가상 신호 TEST";else->"차량 주행"}}","recommend_source",1100f,228f,505f,58f){chooseRecommendationSource()}
                     repository.recommendations(recommendationSource).recommendations.forEachIndexed {i,q->
                         scene.button("","recommend_card_$i",620f,300f+i*190f,1015f,170f){recommendationDetails(q)}.apply {
                             background=null;elevation=0f;contentDescription="${q.title} · ${q.reason} · 자세히 보기"
                         }
                     }
-                    scene.button("차량 신호 퀘스트","recommend_to_vehicle",850f,985f,350f,68f){showVehicleQuests()}
                     scene.button("지도로 돌아가기","recommend_to_map",1240f,985f,360f,68f,true){show(AppScreen.MAP)}
-                }else if(vehicleQuestView) {
-                    scene.button(if(vehicleQuests.enabled)"주행 기록 마치기" else "차량 연결 시작","vehicle_finish",1240f,940f,360f,68f,true){toggleVehicleRecording()}
                 }else {
                     scene.button("★ 퀘스트 계속하기","quest_continue",555f,965f,600f,80f,true){show(if(session.scenario.lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP);if(!session.scenario.started || session.paused)start()}
                     scene.button("초기화","quest_reset",1435f,178f,195f,70f){resetQuests()}
@@ -257,7 +287,7 @@ class ChageunActivity: Activity() {
                     if(telemetry.motion!=MotionState.STOPPED)toast("정차 후 주행 기록을 마칠 수 있어요")
                     else {
                         val id=vehicleQuests.tripId
-                        if(vehicleQuests.finish()){vehicleQuests.resume();if(id!=null)showFeedback(id)}else toast(vehicleQuests.error ?: "저장 실패")
+                        if(vehicleQuests.finish()){vehicleMovedInGear=false;if(id!=null)showFeedback(id)}else toast(vehicleQuests.error ?: "저장 실패")
                     }
                 }
                 scene.button("지난 기록","records_history",790f,190f,270f,90f){history()}
@@ -299,22 +329,15 @@ class ChageunActivity: Activity() {
             if(saveFeedbackNote(areas[i].first,areas[i].second,true)){toast("다음 맞춤 퀘스트에 반영할게요");show(screen)}else toast(repository.lastError ?: "저장 실패")
         }.setNegativeButton("닫기",null).show()
     }
-    fun showVehicleQuests() {vehicleQuestView=true;recommendView=false;show(AppScreen.QUESTS)}
-    private fun toggleVehicleRecording() {
-        if(!vehicleQuests.enabled){vehicleQuests.resume();show(screen);return}
-        val id=vehicleQuests.tripId
-        if(id!=null && telemetry.motion!=MotionState.STOPPED){toast("정차 후 주행 기록을 마칠 수 있어요");return}
-        if(vehicleQuests.finish()){if(id!=null)showFeedback(id)else show(screen)}else toast(vehicleQuests.error ?: "저장 실패")
-    }
-    fun showQuestProgress() {vehicleQuestView=false;recommendView=false;show(AppScreen.QUESTS)}
+    fun showQuestProgress() {recommendView=false;show(AppScreen.QUESTS)}
     fun showRecommendations(source: String="VEHICLE") {
         require(source in setOf("VEHICLE","REPLAY","SIMULATION"))
-        recommendationSource=source;vehicleQuestView=false;recommendView=true;show(AppScreen.QUESTS)
+        recommendationSource=source;recommendView=true;show(AppScreen.QUESTS)
     }
     fun recommendationDiagnostics()=(canvas as? RecommendationCanvas)?.result
     private fun chooseRecommendationSource() {
         AlertDialog.Builder(this).setTitle("맞춤 퀘스트 기준")
-            .setItems(arrayOf("Pleos 차량 주행 기록","자동 시연 메모 · 운전 점수 없음")){_,i->showRecommendations(if(i==0)"VEHICLE" else "REPLAY")}
+            .setItems(arrayOf("Pleos 차량 주행 기록","자동 시연 기록 · 운전 점수 없음")){_,i->showRecommendations(if(i==0)"VEHICLE" else "REPLAY")}
             .setNegativeButton("닫기",null).show()
     }
     private fun recommendationDetails(q: com.hmgchallenge.pleosstarter.analysis.Recommendation) {
@@ -325,7 +348,7 @@ class ChageunActivity: Activity() {
             "SMOOTH_ACCEL","BRAKING"->RoadLesson.COMBINED
             else->null
         }
-        val message="${q.reason}\n\n${q.goal}\n\n"+if(recommendationSource=="REPLAY")"시연 메모로 고른 연습입니다. 자동 시연 완료는 실제 운전 숙련도나 차량 퀘스트 달성으로 기록하지 않습니다." else "주행 신호로 확인 가능한 조건만 기록합니다. 차로 위치·차간거리·주변 안전을 자동으로 확인한 결과는 아닙니다."
+        val message="${q.reason}\n\n${q.goal}\n\n"+if(recommendationSource=="REPLAY")"시연 기록과 메모로 고른 연습입니다. 자동 시연 완료는 실제 운전 숙련도나 차량 퀘스트 달성으로 기록하지 않습니다." else "주행 신호로 확인 가능한 조건만 기록합니다. 차로 위치·차간거리·주변 안전을 자동으로 확인한 결과는 아닙니다."
         val dialog=AlertDialog.Builder(this).setTitle(q.title).setMessage(message).setNegativeButton("닫기",null)
         if(lesson!=null)dialog.setPositiveButton("관련 자동 시연 보기"){_,_->select(lesson)}
         else dialog.setPositiveButton("확인",null)
@@ -376,6 +399,10 @@ class ChageunActivity: Activity() {
     }
     fun startPrepared(checked: Set<Int>?=null) {
         if(emptyPreview)return
+        if(session.usesReplaySpeed && mirrorAvailable && vehicleQuests.tripId!=null) {
+            if(telemetry.motion!=MotionState.STOPPED){toast("차량 주행 중이에요 · 정차 후 자동 시연을 시작해 주세요");return}
+            if(!vehicleQuests.finish()){toast("이전 주행 기록을 저장하지 못했어요");return}
+        }
         if(!session.start())toast(session.error ?: "저장 실패")
         else if(checked!=null && !session.confirmChecklist(com.hmgchallenge.pleosstarter.quests.CoachSkill.PREPARATION,checked))toast(session.error ?: "점검 기록 실패")
         lastTick=SystemClock.elapsedRealtime()
@@ -437,23 +464,58 @@ class ChageunActivity: Activity() {
         val format=java.text.SimpleDateFormat("MM/dd HH:mm",java.util.Locale.KOREA)
         AlertDialog.Builder(this).setTitle("지난 연습 기록").setItems(trips.map {"${format.format(java.util.Date(it.startedAt))} · ${((it.distanceKm ?: 0f)*1000).toInt()}m"}.toTypedArray()){_,i->selectedTrip=trips[i].tripId;show(AppScreen.FEEDBACK)}.setNegativeButton("닫기",null).show()
     }
+    // R opens the emulator's full-screen rear camera. Finish only that bounded, authored parking
+    // segment while it owns the display. Returning the console to P releases the OEM camera.
+    private var reverseDeadline=0L
+    private val reverseCameraReplay=object: Runnable {
+        override fun run() {
+            val now=SystemClock.elapsedRealtime()
+            if(active)return
+            if(now<reverseDeadline && !session.paused && session.scenario.lesson==RoadLesson.PARKING) {
+                session.tick(now-lastTick,now,null,false)
+                lastTick=now
+                if(!session.paused && !session.scenario.complete) {
+                    mirroredFrame=ReplayControls.from(session.scenario,session.indicatorOverride)
+                    ReplayConsole.update(mirroredFrame)
+                    handler.postDelayed(this,100)
+                    return
+                }
+            }
+            session.pause()
+            mirroredFrame=null
+            ReplayConsole.update(null)
+        }
+    }
     override fun onStop() {
         memo?.dismiss();memo=null
         active=false;handler.removeCallbacks(loop);handler.removeCallbacks(refreshRecommendations);recommendationObserver?.close();recommendationObserver=null
-        if(::session.isInitialized)session.pause()
+        val reverseCamera=mirroredFrame?.gear=="Reverse" && session.scenario.lesson==RoadLesson.PARKING && !isFinishing
+        if(reverseCamera) {
+            reverseDeadline=SystemClock.elapsedRealtime()+60_000
+            handler.post(reverseCameraReplay)
+        }else {
+            if(mirroredFrame!=null){mirroredFrame=null;ReplayConsole.update(null)}
+            if(::session.isInitialized)session.pause()
+        }
         if(::vehicleQuests.isInitialized) {
+            vehicleMovedInGear=false
             vehicleQuests.suspendInputs()
-            if(vehicleQuests.tripId!=null && vehicleQuests.finish(false))vehicleQuests.resume()
+            if(vehicleQuests.tripId!=null)vehicleQuests.finish(false)
         }
         voice?.release();voice=null;celebration?.stop();celebration=null
         if(::telemetry.isInitialized)telemetry.stop()
         super.onStop()
     }
-    override fun onDestroy(){if(::session.isInitialized)session.close();super.onDestroy()}
+    override fun onDestroy() {
+        handler.removeCallbacks(reverseCameraReplay)
+        if(mirroredFrame!=null){mirroredFrame=null;ReplayConsole.update(null)}
+        if(::session.isInitialized)session.close()
+        super.onDestroy()
+    }
     fun voiceDiagnostics()=speechEvidence.snapshot()
     fun vehicleDiagnostics()=telemetry.diagnostics()
     fun vehicleInput()=telemetry.questInput()
-    fun liveDrivingDiagnostics()=mapOf("motion" to telemetry.motion.name,"speedMps" to telemetry.speedMps.toString(),"speedStatus" to telemetry.speedStatus,"sdkIndicator" to telemetry.indicator.name,"coachIndicator" to session.scenario.indicator.name,"indicatorInput" to if(session.indicatorOverride==null)"SDK" else "SIMULATION","tripId" to vehicleQuests.tripId.orEmpty(),"recordingStatus" to vehicleQuests.status)
+    fun liveDrivingDiagnostics()=mapOf("gear" to celebration?.gear.orEmpty(),"motion" to telemetry.motion.name,"speedMps" to telemetry.speedMps.toString(),"speedStatus" to telemetry.speedStatus,"sdkIndicator" to telemetry.indicator.name,"coachIndicator" to session.scenario.indicator.name,"indicatorInput" to if(session.indicatorOverride!=null || session.usesReplaySpeed && session.scenario.started && !session.paused)"SIMULATION" else "SDK","tripId" to vehicleQuests.tripId.orEmpty(),"recordingStatus" to vehicleQuests.status)
     fun showFeedback(tripId: String) {
         require(repository.trip(tripId)!=null)
         if(tripId==session.tripId && session.completedAt!=null)completionShown=tripId

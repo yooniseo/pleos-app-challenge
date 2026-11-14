@@ -42,7 +42,6 @@ fun Instrumentation.runLiveConsoleValidation(mode: String) {
         repository.saveSnapshot("settings:product","{\"voice\":false,\"celebration\":false}")
         activity=startActivitySync(Intent(targetContext,ChageunActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as ChageunActivity
         val app=activity;waitForIdleSync()
-        onMain {app.showVehicleQuests()}
         File(output,"ready.json").writeText("{\"ready\":true}")
         sendStatus(1,Bundle().apply {putString("phase","READY_FOR_ORIGINAL_CONSOLE_SCRIPT_$mode")})
         val deadline=SystemClock.elapsedRealtime()+240_000
@@ -72,7 +71,15 @@ fun Instrumentation.runLiveConsoleValidation(mode: String) {
             Thread.sleep(250)
         }
         check(moving && id!=null) {"No live movement from Virtual Console"}
-        onMain {check(app.vehicleQuests.finish());app.showFeedback(id!!)}
+        // The external script parks after the standstill; wait for the app to finalize without a button.
+        val parkedBy=SystemClock.elapsedRealtime()+20_000
+        var finalized=false
+        while(!finalized && SystemClock.elapsedRealtime()<parkedBy) {
+            onMain {finalized=app.vehicleQuests.tripId==null}
+            if(!finalized)Thread.sleep(250)
+        }
+        check(finalized && repository.trip(id!!)?.endedAt!=null) {"Park did not finalize the trip automatically"}
+        onMain {app.showFeedback(id!!)}
         val scores=repository.scores(id!!)!!
         val attempts=repository.events(id!!).filter {it.type=="VEHICLE_QUEST_ATTEMPT"}.map {QuestBoardCodec.decodeAttempt(it.payload)}
         proof.put("states",states).put("scores",JSONObject(scores.scores.mapKeys {it.key.name})).put("samples",repository.samples(id!!).size)

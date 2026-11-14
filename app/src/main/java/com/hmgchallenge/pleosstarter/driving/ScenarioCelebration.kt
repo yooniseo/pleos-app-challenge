@@ -8,6 +8,7 @@ import com.hmgchallenge.pleosstarter.R
 class ScenarioCelebration(private val context: Context,private val stationary: ()->Boolean,
                           private val onStatus: (String)->Unit) {
     private var state=VehicleCoachState()
+    val gear get()=state.gear
     private var vehicle: VehicleCoachSource?=null
     private var pendingLight=false
     private var player: MediaPlayer?=null

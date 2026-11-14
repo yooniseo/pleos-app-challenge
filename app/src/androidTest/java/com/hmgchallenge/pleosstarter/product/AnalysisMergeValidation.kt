@@ -59,7 +59,7 @@ fun Instrumentation.runAnalysisMergeValidation() {
             controller.update(VehicleQuestInput(null,0,null,0,null,0,value,timestamp),now,epoch+now)
         }
         repeat(3) {
-            controller.resume();now+=10_000;speed(0.0)
+            now+=10_000;speed(0.0)
             // Multiple UI ticks reuse a sample; the zero sample must retain the sensor's receipt time.
             val zeroAt=now
             repeat(10){now+=50;speed(0.0,zeroAt)}
@@ -90,7 +90,7 @@ fun Instrumentation.runAnalysisMergeValidation() {
         onMain {
             app.window.decorView.findViewWithTag<Button>("feedback_recommend").performClick()
             check(app.recommendationDiagnostics()?.recommendations?.any {it.weakness=="PARKING"}==true)
-            check(app.window.decorView.findViewWithTag<Button>("quests_vehicle")!=null)
+            check(app.window.decorView.findViewWithTag<Button>("quests_vehicle")==null)
         }
         waitForIdleSync();capture(app,"02-personalized-quests")
         onMain {
@@ -106,6 +106,8 @@ fun Instrumentation.runAnalysisMergeValidation() {
             while(app.session.completedAt==null && tick<2000){tick++;app.session.tick(100,SystemClock.elapsedRealtime()+tick*100,null,false,epoch+tick*100)}
             check(app.session.completedAt!=null)
             app.showFeedback(app.session.tripId!!)
+            check(repository.events(app.session.tripId!!).count {it.type=="NEXT_PRACTICE"}==1)
+            check(repository.recommendations("REPLAY").recommendations.single().weakness=="PARKING")
             repeat(2){check(app.saveFeedbackNote("후진 주차","PARKING",true))}
             app.window.decorView.findViewWithTag<Button>("feedback_recommend").performClick()
             check(app.recommendationDiagnostics()?.averages?.values?.all {it==null}==true)
@@ -131,20 +133,10 @@ fun Instrumentation.runAnalysisMergeValidation() {
         capture(app,"05-live-speed-status")
         onMain {
             app.showRecommendations()
-            app.window.decorView.findViewWithTag<Button>("recommend_to_vehicle").performClick()
-            check(app.window.decorView.findViewWithTag<Button>("vehicle_finish")!=null)
-            check(app.recommendationDiagnostics()==null)
-        }
-        waitForIdleSync();capture(app,"06-vehicle-connection")
-        onMain {
-            app.window.decorView.findViewWithTag<Button>("vehicle_finish").performClick()
-            check(!app.vehicleQuests.enabled)
-            app.window.decorView.findViewWithTag<Button>("vehicle_finish").performClick()
-            check(app.vehicleQuests.enabled)
-            app.window.decorView.findViewWithTag<Button>("tab_QUESTS").performClick()
+            check(app.window.decorView.findViewWithTag<Button>("recommend_to_vehicle")==null)
             check(app.recommendationDiagnostics()!=null)
         }
-        proof.put("featureParity","PASS: recommendations, comprehensive records, vehicle signal board, connection stop/start, report scores, feedback link and map return remain accessible")
+        proof.put("automaticConnection","SDK inputs arrive on the map. Three successive trips are recorded without a start or reconnect action.")
         onMain {app.finish()};waitForIdleSync();activity=null
         repository.close();repository=open();SharedCoachRepository.testOverride=repository
         check(repository.recommendations("SIMULATION").recommendations.any {it.weakness=="PARKING"})

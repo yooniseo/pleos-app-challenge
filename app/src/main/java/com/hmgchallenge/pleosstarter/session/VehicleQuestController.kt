@@ -22,7 +22,6 @@ class VehicleQuestController(context: Context,val source: String="VEHICLE") {
     var coachMessage="";private set
     var coachMessageUntil=0L;private set
     var onCue: (String)->Unit={}
-    var enabled=true;private set
     private var metres=0.0
     private var lastAt=0L
     private var lastSample=0L
@@ -47,7 +46,6 @@ class VehicleQuestController(context: Context,val source: String="VEHICLE") {
     private fun fresh(now: Long,at: Long)=at>0 && now-at in 0..3000
 
     fun update(input: VehicleQuestInput,now: Long,wall: Long=System.currentTimeMillis()) {
-        if(!enabled)return
         currentMonotonic=now;currentWall=wall
         if(pending!=null) {
             if(now-lastRetry>=1000){lastRetry=now;persist()}
@@ -118,9 +116,9 @@ class VehicleQuestController(context: Context,val source: String="VEHICLE") {
         if(id!=null && !repository.endTrip(id,at,(metres/1000).toFloat(),complete)) {
             error=repository.lastError;return false
         }
-        tripId=null;error=null;enabled=false;status="차량 기록을 마쳤어요 · 다시 연결할 수 있어요"
+        tripId=null;error=null
+        suspendInputs()
         return true
     }
-    fun resume() {enabled=true;suspendInputs()}
-    fun suspendInputs() {detector.reset();lastAt=0;status="차량 연결 대기"}
+    fun suspendInputs() {detector.reset();lastAt=0;lastStillAt=0;status="다음 주행 신호 대기"}
 }

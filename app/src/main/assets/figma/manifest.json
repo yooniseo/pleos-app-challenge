@@ -133,6 +133,13 @@
       "width": 63,
       "height": 62,
       "bytes": 8071
+    },
+    {
+      "file": "nav_straight.png",
+      "nodeId": "175:14724",
+      "width": 67,
+      "height": 132,
+      "bytes": 872
     }
   ],
   "export": "Figma Plugin API PNG, contentsOnly=true, useAbsoluteBounds=true; original file unchanged"

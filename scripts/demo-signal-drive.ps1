@@ -1,7 +1,7 @@
 ﻿# Demo 2: 3 lane changes without turn signal, 1 with signal, 1 right turn without braking (~2 min).
 # Expected: 깜빡이 25점 / 회전감속 0점 -> recommends vehicle-signal quests
 #   "교차로 우회전 · 감속 먼저" / "차선 변경 · 깜빡이 먼저".
-# Before running: app open -> 퀘스트 -> 차량 신호 퀘스트 -> button must read "주행 기록 마치기".
+# Open the map. Vehicle quest recording starts automatically on fresh moving speed.
 #
 # NOTE steering sign: Virtual Console +deg arrives in the app as -deg (left).
 # The quest detector treats + as right, so right-hand maneuvers are sent as negative values here.
@@ -27,7 +27,7 @@ try {
     Sig BlinkRight; Hold 20 0 4; Hold 20 -30 4; Hold 20 0 2; Sig Off; Hold 20 0 6
     foreach ($v in 16, 12, 8, 4, 0) { Hold $v 0 1 }; Hold 0 0 3
     curl.exe -s -o NUL -X PUT "$B/vehicle/gear?gear=Park"
-    "done - now press the finish-recording button in the app"
+    "parked - open driving feedback or personalized quests"
 } finally {
     Stop-Job $hb; Remove-Job $hb
 }
