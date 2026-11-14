@@ -20,10 +20,11 @@ class SharedCoachRepository(val database: TripDatabase) {
     private val rawCache=mutableMapOf<String,String?>()
     @Volatile private var completions=emptyList<PracticeCompletion>()
     @Volatile private var difficulty=emptyList<CoachingEvent>()
+    @Volatile private var demoResetAt=0L
     @Volatile var lastError: String?=null;private set
     private fun <T> io(action: ()->T): T = if(Thread.currentThread()==workerThread)action() else worker.submit<T> {action()}.get()
     private val dao get()=database.coachDao()
-    private fun refresh() {completions=dao.completions("demo")+dao.completions("personal");difficulty=dao.difficulties()}
+    private fun refresh() {completions=dao.completions("demo")+dao.completions("personal");difficulty=dao.difficulties();demoResetAt=dao.snapshot("demo-reset-at")?.value?.toLongOrNull() ?: 0L}
     private fun notify(key: String) {main.post {listeners.forEach {it(key)}}}
     fun observe(listener: (String)->Unit): Closeable {listeners.add(listener);return Closeable {listeners.remove(listener)}}
     fun snapshot(key: String,legacy: ()->String? = {null}): String? = io {
@@ -40,9 +41,19 @@ class SharedCoachRepository(val database: TripDatabase) {
     };notify(key);true}.getOrElse {lastError=it.cause?.message ?: it.message;false}
 
     /** Snapshot plus queryable evidence/quests/events commit in one transaction. Legacy prefs stay intact. */
-    fun saveQuest(profile: String,raw: String): Boolean=runCatching {io {
+    fun saveQuest(profile: String,raw: String): Boolean=write("quest:$profile") {persistQuest(profile,raw)}
+    /** Begin a fresh demo progression, retaining the old evidence for historical reports. */
+    fun resetDemoQuest(raw: String): Boolean=write("quest:demo") {
+        val root=JSONObject(raw)
+        require(root.getBoolean("demo") && root.getJSONArray("evidence").length()==0 && root.getJSONObject("stages").length()==0 && !root.has("session"))
+        val at=System.currentTimeMillis();val archive="demo-archive:${UUID.randomUUID()}"
+        dao.snapshot("quest:demo")?.let {dao.saveSnapshot(AppSnapshot(archive,it.value,at))}
+        dao.archiveDemoCompletions(archive)
+        dao.saveSnapshot(AppSnapshot("demo-reset-at",at.toString(),at))
+        persistQuest("demo",raw)
+    }
+    private fun persistQuest(profile: String,raw: String) {
         val root=JSONObject(raw);require(root.getBoolean("demo")==(profile=="demo"))
-        database.runInTransaction {
             dao.saveSnapshot(AppSnapshot("quest:$profile",raw,System.currentTimeMillis()))
             val records=root.getJSONArray("evidence").objects().map {e->PracticeCompletion(
                 "$profile:${e.getString("id")}",profile,e.nullableString("tripId"),e.getString("skill"),e.getString("source"),e.getLong("at"),e.getBoolean("difficult"))}
@@ -65,9 +76,7 @@ class SharedCoachRepository(val database: TripDatabase) {
                 }
                 if(ended!=null)buildReport(id,ended)
             }
-        }
-        rawCache["quest:$profile"]=raw;refresh();lastError=null
-    };notify("quest:$profile");true}.getOrElse {lastError=it.cause?.message ?: it.message;false}
+    }
 
     fun beginTrip(id: String,lesson: String,speedSource: String,at: Long): Boolean=write("trip") {
         dao.saveTrip(Trip(id,at,null,if(speedSource=="VEHICLE")"VEHICLE" else "REPLAY",0f))
@@ -106,7 +115,7 @@ class SharedCoachRepository(val database: TripDatabase) {
     fun questRows()=io {dao.questRows()}
     fun completions(profile: String,skill: String)=completions.filter {it.profile==profile && it.skill==skill}
     fun difficultyAt(profile: String,skill: String): Long= difficulty.firstOrNull {
-        val data=JSONObject(it.payload);data.optString("profile")==profile && data.optString("skill")==skill
+        val data=JSONObject(it.payload);data.optString("profile")==profile && data.optString("skill")==skill && (profile!="demo" || it.at>demoResetAt)
     }?.at ?: 0L
     fun flush() {io {Unit}}
     fun close() {listeners.clear();main.removeCallbacksAndMessages(null);flush();database.close();worker.shutdown()}
@@ -115,7 +124,7 @@ class SharedCoachRepository(val database: TripDatabase) {
         database.runInTransaction {action()};rawCache.clear();refresh();lastError=null
     };notify(key);true}.getOrElse {lastError=it.cause?.message ?: it.message;false}
     private fun buildReport(id: String,at: Long) {
-        val samples=dao.samples(id);val notes=dao.notes(id);val practice=dao.completions("demo").filter {it.tripId==id}
+        val samples=dao.samples(id);val notes=dao.notes(id);val practice=dao.tripCompletions(id)
         val review=SpeedReview.analyze(samples.map {SpeedReview.Sample(it.t,it.speedKmh?.toDouble())})
         dao.clearSpeedEvents(id,"$id:speed:%");dao.saveSpeedEvents(review.mapIndexed {i,e->TripEvent("$id:speed:$i",id,e.type,e.at,1,e.delta.toFloat())})
         val good=practice.map {when(it.skill){"LANE_CHANGE"->"한 차로 이동 연습을 마쳤어요";"INTERSECTION"->"우회전 연습을 마쳤어요";"PARKING"->"후진 주차·정렬을 연습했어요";else->"${it.skill} 연습을 기록했어요"}}.toMutableList()

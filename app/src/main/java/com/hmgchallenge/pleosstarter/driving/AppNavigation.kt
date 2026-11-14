@@ -53,6 +53,7 @@ object AppNavigation {
     }
     fun own(activity: DrivingSimulatorActivity) {install(activity);owner=WeakReference(activity)}
     fun forget(activity: DrivingSimulatorActivity) {if(owner.get()===activity)owner.clear()}
+    fun prepareFreshDemo() {owner.get()?.prepareFreshDemo()}
     fun content(activity: Activity,view: View,selected: String,dark: Boolean=false) {
         install(activity)
         val scale=activity.resources.displayMetrics.density

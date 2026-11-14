@@ -111,6 +111,7 @@ class QuestActivity : Activity() {
         guide.render(state.guideUiModel())
     }
     private fun quests(parent: LinearLayout) {
+        if(demo)demoProgress(parent)
         val total = card(parent)
         total.addView(label("${state.levelName}  ·  ${state.growthPercent}%", 26f, accent))
         total.addView(progress(state.growthPercent))
@@ -154,6 +155,33 @@ class QuestActivity : Activity() {
             item.addView(label(quest.description, 15f, muted))
             item.addView(button("살펴보기") { openQuest(quest) })
         }
+    }
+    private fun demoProgress(parent: LinearLayout) {
+        val area=card(parent)
+        area.addView(label("시연 · 단계가 쌓이는 모습 보기",22f,accent))
+        area.addView(label("준비 확인 → 첫 연습 완료 → 누적 3회 → 내 경험 정리",15f,muted))
+        listOf(CoachSkill.LANE_CHANGE,CoachSkill.INTERSECTION).forEach {skill->
+            val stages=state.completedStages(skill)
+            area.addView(label("${skillName(skill)} · ${stages.size}/4단계 · 연습 ${state.practiceCount(skill)}회",19f,accent).apply {tag="demo_progress_${skill.name}"})
+            val names=listOf("준비","첫 실습","3회 반복","돌아보기")
+            area.addView(label(QuestStage.values().mapIndexed {index,stage->"${if(stage in stages)"●" else "○"} ${names[index]}"}.joinToString("  →  "),15f))
+        }
+        area.addView(label("준비 후에는 상세 코치 → 1회 후 힌트 → 3회 후 요청할 때 도움으로 바뀌어요. 실제 운전 숙련도와 구분한 시연 규칙이에요.",14f,muted))
+        area.addView(button("준비 확인하고 지도에서 연습") {
+            update {QuestEngine.learn(QuestEngine.learn(it,CoachSkill.LANE_CHANGE),CoachSkill.INTERSECTION)}
+            if(storageAvailable)AppNavigation.drive(this)
+        }.apply {tag="demo_prepare"})
+        area.addView(button("시연 진행 초기화") {
+            show(AlertDialog.Builder(this).setTitle("시연을 처음부터 볼까요?")
+                .setMessage("진행 중인 시연을 마치고 체험 퀘스트의 단계와 횟수를 0으로 돌려요. 이전 주행·메모·피드백과 개인 기록은 남겨둬요.")
+                .setNegativeButton("취소",null).setPositiveButton("처음부터 보기") {_,_->
+                    AppNavigation.prepareFreshDemo()
+                    synchronized(QuestIntegration.lock) {
+                        if(store.resetDemoProgress()){state=store.load();render(true);toast("시연 단계와 연습 횟수를 0으로 돌렸어요")}
+                        else toast(getString(R.string.quest_save_failed))
+                    }
+                }.create())
+        }.apply {tag="demo_reset"})
     }
     private fun stageDetails(skill: CoachSkill, quest: StageQuest) {
         val previous = QuestStage.values().take(quest.stage.ordinal).all { it in state.completedStages(skill) }

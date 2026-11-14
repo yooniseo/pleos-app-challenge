@@ -11,6 +11,8 @@ interface CoachDao {
     @Query("DELETE FROM PracticeCompletion WHERE profile = :profile") fun clearCompletions(profile: String)
     @Upsert fun saveCompletions(value: List<PracticeCompletion>)
     @Query("SELECT * FROM PracticeCompletion WHERE profile=:profile ORDER BY at DESC") fun completions(profile: String): List<PracticeCompletion>
+    @Query("UPDATE PracticeCompletion SET profile=:archive WHERE profile='demo'") fun archiveDemoCompletions(archive: String)
+    @Query("SELECT * FROM PracticeCompletion WHERE tripId=:id ORDER BY at") fun tripCompletions(id: String): List<PracticeCompletion>
     @Insert(onConflict=OnConflictStrategy.IGNORE) fun saveEvent(event: CoachingEvent): Long
     @Query("SELECT * FROM CoachingEvent WHERE tripId=:tripId ORDER BY at,id") fun events(tripId: String): List<CoachingEvent>
     @Query("SELECT * FROM CoachingEvent WHERE type='LEGACY_COACH' ORDER BY at,id") fun journal(): List<CoachingEvent>

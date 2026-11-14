@@ -444,6 +444,7 @@ class DrivingSimulatorActivity : Activity() {
         simpleQuestKey="";questSaved=true;simpleLastCue="";simpleLastSpokenAt=0;paused=false;automatic=false;model.freeze();coachNotes.clear()
         lastTick=android.os.SystemClock.elapsedRealtime();render()
     }
+    fun prepareFreshDemo() {newSimple(RoadLesson.COMBINED,ScenarioSpeed.REPLAY)}
     private fun toggleSteeringFollow() {
         if(steeringFollow!=null) {
             steeringFollow=null;paused=pausedBeforeFollow;lastTick=android.os.SystemClock.elapsedRealtime();render();return

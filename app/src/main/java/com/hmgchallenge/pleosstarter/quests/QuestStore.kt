@@ -46,6 +46,13 @@ class QuestStore(context: Context, private val demo: Boolean) {
     }
 
     fun save(state: QuestState): Boolean {
+        return repository.saveQuest(profile,encode(state))
+    }
+    fun resetDemoProgress(): Boolean {
+        require(demo) {"Only the demo profile can be reset here"}
+        return repository.resetDemoQuest(encode(QuestState(demo=true)))
+    }
+    private fun encode(state: QuestState): String {
         require(state.demo == demo)
         val settings = state.settings
         val root = JSONObject().put("version", 2).put("demo", demo).put("completed", JSONArray(state.completed.toList()))
@@ -66,7 +73,7 @@ class QuestStore(context: Context, private val demo: Boolean) {
                     .put("abruptAccelerationCount", it.abruptAccelerationCount).put("abruptBrakingCount", it.abruptBrakingCount)
             }))
         state.session?.let { root.put("session", encodeSession(it)) }
-        return repository.saveQuest(profile,root.toString())
+        return root.toString()
     }
     private fun contextJson(ctx: SituationContext) = JSONObject().put("tripId", ctx.tripId).put("occurrenceId", ctx.occurrenceId)
         .put("maneuverId", ctx.maneuverId).put("kind", ctx.kind.name).put("source", ctx.source.name).put("at", ctx.at)

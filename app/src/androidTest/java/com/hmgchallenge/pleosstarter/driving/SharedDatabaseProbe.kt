@@ -126,6 +126,16 @@ class SharedDatabaseProbe(private val i: Instrumentation) {
             check(db.notes(nextId!!).size==1 && db.notes(currentId).size==2)
             ui {a.finish()};Thread.sleep(1200)
             check(db.report(currentId)!=null)
+            val completedId=tripIds.first()
+            val previousReport=db.report(completedId)!!
+            check(store.resetDemoProgress())
+            check(store.load().evidence.isEmpty() && store.load().stages.isEmpty())
+            check(db.completions("demo","LANE_CHANGE").isEmpty())
+            check(db.difficultyAt("demo","LANE_CHANGE")==0L)
+            check(db.previewReport(completedId))
+            check(db.report(completedId)!!.goodPoints==previousReport.goodPoints)
+            check(db.samples(completedId).size>=2 && db.notes(currentId).size==2)
+            check(personal.load()==personalBefore)
             check(db.lastError==null) {db.lastError.orEmpty()}
             migrationAndReopen()
             val proof=JSONObject().put("result","PASS_SHARED_DATABASE").put("virtualScenarioTime",true)
@@ -135,6 +145,7 @@ class SharedDatabaseProbe(private val i: Instrumentation) {
                 .put("sttRecognitionVerified",false)
                 .put("memoHasSimulationLocationAndCue",true).put("restartDoesNotAttachNotesToPreviousTrip",true)
                 .put("commonTabsRoundTrip",true).put("recordingContinuesOnQuestScreen",true).put("externalBackgroundPauses",true)
+                .put("demoResetPreservesPastReportsAndPersonalProfile",true).put("demoResetClearsCountsStagesAndOldDifficulty",true)
             File(context.filesDir,"shared-database-proof.json").writeText(proof.toString(2))
             result.putString("result",proof.toString());code=Activity.RESULT_OK
         } catch(error: Throwable) {result.putString("result","FAIL: ${error.stackTraceToString()}")}
