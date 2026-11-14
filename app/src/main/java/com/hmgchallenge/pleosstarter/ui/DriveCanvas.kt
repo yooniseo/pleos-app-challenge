@@ -25,9 +25,9 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
         navigation(c,hud)
         card(c,650f,59f,430f,103f,Color.WHITE,25f)
         text(c,vehicleLine,672f,72f,28f,Palette.ink,true)
-        text(c,vehicleDetail.take(24),672f,117f,20f,Color.GRAY)
+        text(c,if(session.simulatedBeltBuckled==true && s.started)"${vehicleDetail.substringBefore(" · ")} · 시연 벨트 ON" else vehicleDetail.take(24),672f,117f,20f,Color.GRAY)
         card(c,1591f,59f,68f,68f,Color.WHITE,20f)
-        text(c,if(tilted)"2D" else "3D",1608f,65f,20f,Color.BLACK,true)
+        text(c,if(tilted)"3D" else "2D",1608f,65f,20f,Color.BLACK,true)
         assets.figma?.draw(c,"map_pointer",RectF(1612f,97f,1638f,119f))
         card(c,1591f,157f,68f,68f,Color.WHITE,20f)
         assets.figma?.draw(c,"map_settings",RectF(1610f,176f,1640f,206f))
@@ -42,10 +42,7 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
                 s.distance in (s.course.turnDistance-130)..s.course.turnDistance
             if(s.started && !s.complete && (laneReminder || turnReminder)) {
                 val imminent=turnReminder && s.course.turnDistance-s.distance<=30
-                val left=if(imminent)980f else 955f
-                val width=if(imminent)675f else 700f
-                val scale=width/if(imminent)675f else 804f
-                c.save();c.translate(left,705f);c.scale(scale,scale)
+                c.save();c.translate(if(imminent)980f else 896f,705f)
                 box(c,0f,0f,if(imminent)675f else 804f,189f,Color.WHITE,30f)
                 if(imminent)assets.figma?.draw(c,"caution",RectF(69f,22f,139f,167f))
                 else assets.mascot(c,RectF(45f,20f,195f,170f))
@@ -54,6 +51,8 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
                 text(c,if(laneReminder)"사이드미러 확인하세요" else "보행자를 확인하세요",tx,84f,55f,Color.BLACK,true)
                 c.restore()
             }
+        }
+        if(coachEnabled && (s.changingLane || abs(s.steeringTarget)>1 || parking && s.started)) {
             box(c,1120f,270f,535f,420f,Color.argb(244,255,255,255),32f)
             text(c,session.learning().label,1152f,286f,27f,Palette.purple,true)
             wrappedText(c,g.headline,1152f,327f,475f,25f,Palette.ink,true)
@@ -61,7 +60,7 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
             wheel.draw(c,1378f,502f,200f,g.steering.toDouble())
             text(c,BeginnerScenarioCoach.steeringPosition(s.steeringTarget),1152f,596f,20f,Palette.purple,true)
         }
-        if(coachEnabled)assets.figma?.draw(c,"coach_on",RectF(58f,650f,242f,743f))
+        if(coachEnabled)assets.figma?.draw(c,"coach_map_on",RectF(61f,653f,236f,741f))
         else {
             box(c,58f,660f,184f,75f,Color.rgb(217,217,217),38f)
             text(c,"OFF",73f,676f,34f,Color.BLACK)
@@ -69,19 +68,24 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
             assets.figma?.draw(c,"coach_off_avatar",RectF(162f,665f,228f,731f));c.restore()
         }
         arrival(c,hud)
-        val earned=session.quest.evidence.filter {it.tripId==session.tripId}.map {it.skill}.distinct().size
-        val target=if(session.selectedLesson==RoadLesson.COMBINED)6 else 1
+        val target=if(session.selectedLesson==RoadLesson.COMBINED)3 else 1
+        val stage=when {
+            target==1->1
+            parking->3
+            s.laneDone->2
+            else->1
+        }
         if(compactQuestBanner) {
             box(c,1129f,928f,526f,147f,Color.rgb(217,217,217),80f)
             assets.figma?.draw(c,"quest_flag_outline",RectF(1167f,961f,1211f,1024f))
             assets.figma?.draw(c,"quest_chevron_dark",RectF(1615f,980f,1635f,1022f))
-            text(c,"QUEST $earned/$target",1230f,944f,20f,Color.BLACK)
+            text(c,"QUEST $stage/$target",1230f,944f,20f,Color.BLACK)
             text(c,if(s.complete)"이번 연습 완료" else if(parking)"주차 마무리하기" else if(s.laneDone || s.lesson==RoadLesson.TURN)"조심히 우회전하기" else "한 차로씩 이동하기",1230f,979f,31f,Color.BLACK,true)
         }else {
             box(c,1095f,905f,560f,170f,Color.rgb(75,143,248),30f)
             assets.figma?.draw(c,"quest_flag",RectF(1122f,925f,1252f,1055f))
             assets.figma?.draw(c,"chevron",RectF(1602f,973f,1622f,1008f))
-            text(c,"Quest  $earned/$target",1292f,923f,20f,Color.WHITE)
+            text(c,"Quest  $stage/$target",1292f,923f,20f,Color.WHITE)
             text(c,if(s.complete)"이번 연습\n잘 마쳤어요" else if(parking)"주차선에\n나란히 정렬하기" else if(s.laneDone || s.lesson==RoadLesson.TURN)"경로따라\n우회전하기" else "${s.nextLaneChange?.to ?: 3}차로로\n차선변경하기",1292f,955f,42f,Color.WHITE,true)
         }
         if(android.os.SystemClock.elapsedRealtime()<messageUntil) {
@@ -120,12 +124,12 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
         val eta=hud.remainingSeconds
         val time=when {session.scenario.complete->"연습 완료";!session.scenario.started->"출발 전";session.paused->"일시정지";eta==null->"속도 대기";else->java.text.SimpleDateFormat("h:mm a",java.util.Locale.KOREA).format(java.util.Date(System.currentTimeMillis()+eta*1000L))}
         text(c,time,78f,811f,28f,Color.BLACK,true)
-        text(c,"시연 종료 예상 · 경기대 방향",78f,850f,17f,Color.GRAY)
+        text(c,"목적지 · 경기대학교",78f,850f,17f,Color.GRAY)
         val distance=if(hud.remainingMetres>=1000)"%.1fkm".format(java.util.Locale.KOREA,hud.remainingMetres/1000) else "${hud.remainingMetres.roundToInt()}m"
         text(c,"${eta?.let {"약 ${ceil(it/60.0).toInt()}분"} ?: "대기"} · $distance",365f,814f,23f,Color.BLACK,true)
-        text(c,"시연 진행 ${(hud.progress*100).toInt()}%",420f,853f,18f,Color.GRAY)
-        box(c,83f,896f,482f,6f,Color.rgb(220,225,237),3f)
-        if(hud.progress>0)box(c,83f,896f,482f*hud.progress,6f,Color.rgb(75,143,248),3f)
+        assets.figma?.draw(c,"battery",RectF(458f,851f,496f,871f))
+        text(c,session.simulatedBatteryPercent?.let {"$it%"} ?: "—",504f,851f,18f,Color.GRAY)
+        assets.figma?.draw(c,"route_segments",RectF(83f,895f,565f,902f))
         assets.figma?.draw(c,"progress_start",RectF(73f,889f,93f,909f))
         val x=83+482*hud.progress
         assets.figma?.draw(c,"progress_current",RectF(x-10,889f,x+10,909f))

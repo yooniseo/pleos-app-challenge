@@ -20,12 +20,8 @@ data class ReplayControls(val gear: String, val speed: Int, val steering: Int, v
         fun from(scenario: SimpleRoadScenario, override: Indicator?): ReplayControls {
             val s = scenario
             if (!s.started || s.complete) return parked
-            val lane = s.nextLaneChange
             val turn = s.lesson == RoadLesson.TURN || s.lesson == RoadLesson.COMBINED
-            val lead = (s.speedMps * 4).coerceIn(18.0, 50.0)
-            val beforeLane = lane != null && s.distance in (lane.start - lead)..lane.end
-            val atTurn = turn && s.distance in (s.course.turnDistance - lead)..(s.course.turnDistance + 54)
-            val signal = override ?: if (beforeLane || atTurn) Indicator.RIGHT else Indicator.OFF
+            val signal = override ?: s.replaySignal()
             val reversing = s.lesson == RoadLesson.PARKING && s.parkingGear == "R"
             val slowing = turn && s.distance in (s.course.turnDistance - 140)..s.course.turnDistance
             val targetKmh = if (s.distance < s.course.turnDistance - 30) 20 else 10
@@ -62,6 +58,29 @@ internal object ReplayConsole {
         }
     }
 
+    /** The console exposes display telltales for the belt and parking brake, not buckle/latch sensors. */
+    fun publishChecklist(preparation: Boolean,done: (Boolean)->Unit) {
+        worker.execute {
+            val client="/browser/session?client=chageun-checklist"
+            val commands=if(preparation)listOf(
+                "/vehicle/telltales/simulator?type=SeatBelt&state=Off&color=Red",
+                "/vehicle/lights?feature=headlamp_mode&value=Auto",
+                "/vehicle/ev-battery?field=soc&value=82"
+            ) else listOf(
+                "/vehicle/telltales/simulator?type=ParkingBrake&state=On&color=Red",
+                "/vehicle/body?window_fl=0&window_fr=0&window_rl=0&window_rr=0",
+                "/vehicle/lights?feature=headlamp_mode&value=Off"
+            )
+            val result=runCatching {
+                request("POST",client)
+                try { commands.forEach {request("PUT",it)} }
+                finally {request("POST","$client&closing=1")}
+            }
+            result.exceptionOrNull()?.let {Log.w("ChageunReplay","Checklist console input failed",it)}
+            done(result.isSuccess)
+        }
+    }
+
     fun filtersVehicleInput(sampleAt: Long) = ownsInput || releasedAt > 0 && sampleAt <= releasedAt + 1500
 
     private fun publish() {
@@ -88,6 +107,14 @@ internal object ReplayConsole {
             }
             status = "차량 콘솔 연동"
             if (frame == null) {
+                // EVS reacts to confirmed DDS state. Keep the session until the rear and blind-spot triggers clear.
+                val state=JSONObject(request("GET","/vehicle/state"))
+                val parked=state.optJSONObject("gear")?.optJSONObject("actual")?.optString("value")=="Park"
+                val signalOff=state.optJSONObject("lights")?.optString("turn_signal_mode")=="Off"
+                if(!parked || !signalOff || state.getJSONObject("controls").getDouble("speed_kph")!=0.0) {
+                    sent=null
+                    return
+                }
                 request("POST", session + "&closing=1")
                 synchronized(this) {
                     releasedAt = SystemClock.elapsedRealtime()

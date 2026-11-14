@@ -140,6 +140,62 @@
       "width": 67,
       "height": 132,
       "bytes": 872
+    },
+    {
+      "file": "drive_car.png",
+      "nodeId": "109:9470",
+      "width": 357,
+      "height": 286,
+      "bytes": 34129
+    },
+    {
+      "file": "road_tree.png",
+      "nodeId": "109:9356",
+      "width": 172,
+      "height": 225,
+      "bytes": 7277
+    },
+    {
+      "file": "battery.png",
+      "nodeId": "113:13115",
+      "width": 39,
+      "height": 20,
+      "bytes": 456
+    },
+    {
+      "file": "crosswalk.png",
+      "nodeId": "113:11684",
+      "width": 677,
+      "height": 116,
+      "bytes": 23827
+    },
+    {
+      "file": "road_tree_far.png",
+      "nodeId": "109:9372",
+      "width": 176,
+      "height": 230,
+      "bytes": 7363
+    },
+    {
+      "file": "road_tree_near.png",
+      "nodeId": "109:9388",
+      "width": 285,
+      "height": 372,
+      "bytes": 11360
+    },
+    {
+      "file": "coach_map_on.png",
+      "nodeId": "143:12526",
+      "width": 175,
+      "height": 88,
+      "bytes": 13117
+    },
+    {
+      "file": "route_segments.png",
+      "nodeId": "113:13122",
+      "width": 489,
+      "height": 6,
+      "bytes": 349
     }
   ],
   "export": "Figma Plugin API PNG, contentsOnly=true, useAbsoluteBounds=true; original file unchanged"

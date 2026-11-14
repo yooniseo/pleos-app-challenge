@@ -138,7 +138,7 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
                 runs.put(JSONObject().put("fixture",definition.id).put("tripId",id).put("metres",repository.trip(id)!!.distanceKm!!*1000)
                     .put("samples",repository.samples(id).size).put("skills",JSONArray(actual.toList())).put("points",repository.tripPoints(id)))
             }
-            check(repository.trips().size==4 && repository.points("demo")==1000)
+            check(repository.trips().size==4 && repository.points("demo")==800)
             proof.put("fixtures",runs)
             var speechBaseline=0
             runOnMainSync {speechBaseline=app.voiceDiagnostics().count {it.api=="TTS" && it.kind=="PLAYBACK_STARTED"}}
@@ -155,7 +155,7 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
             val deadline=SystemClock.elapsedRealtime()+40_000
             while(app.session.completedAt==null && SystemClock.elapsedRealtime()<deadline)Thread.sleep(200)
             check(app.session.completedAt!=null)
-            check(repository.points("demo")==1200)
+            check(repository.points("demo")==1000)
             var speech=emptyList<ApiObservation>()
             val speechDeadline=SystemClock.elapsedRealtime()+6000
             do {
@@ -173,15 +173,15 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
             repository.close()
             repository=SharedCoachRepository(Room.databaseBuilder(targetContext,TripDatabase::class.java,name).addMigrations(TripDatabase.MIGRATION_1_2).build())
             SharedCoachRepository.testOverride=repository
-            check(repository.trips().size==5 && repository.points("demo")==1200)
+            check(repository.trips().size==5 && repository.points("demo")==1000)
             val reopened=ReplaySessionController(targetContext,NavigationSimulationRoute(listOf(GeoPoint(37.0,127.0),GeoPoint(37.001,127.0))))
             val personal=QuestStore(targetContext,false).load()
-            check(reopened.quest.evidence.size==9)
+            check(reopened.quest.evidence.size==8)
             check(reopened.resetProgress())
             check(repository.points("demo")==0 && reopened.quest.evidence.isEmpty())
             check(repository.trips().size==5 && repository.report(id)!=null && repository.tripPoints(id)==200)
             check(QuestStore(targetContext,false).load()==personal)
-            proof.put("reopen","PASS: 5 trips, 9 evidence including approach deceleration, 1200 points").put("reset","PASS: current 0 points; previous reports/rewards and personal state preserved")
+            proof.put("reopen","PASS: 5 trips, 8 evidence including signaled lane change and approach deceleration, 1000 points").put("reset","PASS: current 0 points; previous reports/rewards and personal state preserved")
             // Simulate process loss without calling close(): recovery cannot award a success.
             check(reopened.start())
             val orphanId=reopened.tripId!!

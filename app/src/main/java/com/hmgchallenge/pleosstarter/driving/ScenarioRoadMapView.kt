@@ -22,12 +22,13 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
     var tilted=true
     fun setFrame(route: NavigationSimulationRoute,value: NavigationSimulationFrame,parking: Boolean=false) {course=route;frame=value;this.parking=parking;invalidate()}
     fun diagnostics()=mapOf("visibleTiles" to "0","offlineRoads" to streets.size.toString(),"routePoints" to (course?.points?.size ?: 0).toString(),
-        "marker" to (frame?.position?.let {"${it.latitude},${it.longitude}"} ?: ""),"size" to "${width}x$height","mode" to if(tilted)"3D" else "2D")
+        "marker" to (frame?.position?.let {"${it.latitude},${it.longitude}"} ?: ""),"mapHeading" to frame?.bearing.toString(),"size" to "${width}x$height","mode" to if(tilted)"3D" else "2D")
     override fun onDraw(c: Canvas) {
         c.drawColor(Color.rgb(239,240,246))
         val f=frame ?: return;val route=course ?: return
         if(parking){drawParking(c,f,route);return}
-        val yaw=Math.toRadians(route.bearing(0.0));val scale=width/76f;val projection=if(tilted).72f else 1f
+        val anchorX=width/2f;val anchorY=height/2f
+        val yaw=Math.toRadians(f.bearing);val scale=width/39f;val projection=if(tilted).72f else 1f
         fun local(g: GeoPoint): PointF {
             val east=(g.longitude-f.position.longitude)*111320*cos(Math.toRadians(f.position.latitude))
             val north=(g.latitude-f.position.latitude)*111320
@@ -38,35 +39,43 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
             p.style=Paint.Style.STROKE;p.color=color;p.strokeWidth=width;p.strokeJoin=Paint.Join.ROUND;p.strokeCap=Paint.Cap.BUTT
             p.pathEffect=if(dash)DashPathEffect(floatArrayOf(3f,4f),0f)else null;c.drawPath(path,p);p.pathEffect=null
         }
-        c.save();c.translate(width*.52f,height*.70f);c.scale(scale,scale*projection)
+        c.save();c.translate(anchorX,anchorY);c.scale(scale,scale*projection)
         areas.forEach {(pts,green)->p.style=Paint.Style.FILL;p.color=if(green)Color.rgb(202,220,208)else Color.rgb(224,226,236);c.drawPath(path(pts).apply {close()},p)}
         streets.forEach {s->stroke(path(s.points),Color.rgb(250,251,254),s.width+2.2f)}
         streets.forEach {s->stroke(path(s.points),Color.rgb(198,202,216),s.width)}
         // Widths and lane boundaries are an educational overlay, not lane-level map data.
         streets.forEach {s->
             val line=path(s.points)
-            if(!s.oneway)stroke(line,Color.rgb(245,212,108),.24f)
+            fun parallel(offset: Double)=s.points.mapIndexed {j,g->
+                val a=s.points[(j-1).coerceAtLeast(0)];val b=s.points[(j+1).coerceAtMost(s.points.lastIndex)]
+                val yaw=Math.toDegrees(atan2((b.longitude-a.longitude)*cos(Math.toRadians(a.latitude)),b.latitude-a.latitude))
+                NavigationSimulationRoute.offset(g,yaw,offset)
+            }
+            if(!s.oneway)stroke(line,Color.rgb(243,198,79),.20f)
+            // The divided approach has a median on the left and a shoulder on the right.
+            if(s.oneway && s.lanes>=3) {
+                for(edge in listOf(-1,1)) {
+                    val edgePoints=parallel(edge*(s.width/2-.12))
+                    stroke(path(edgePoints),if(edge<0)Color.rgb(243,198,79) else Color.WHITE,.16f)
+                }
+            }
             if(s.lanes>1)for(i in 1 until s.lanes) {
                 if(!s.oneway && i==s.lanes/2)continue
                 val offset=-s.width/2+s.width*i/s.lanes
-                val shifted=s.points.mapIndexed {j,g->
-                    val a=s.points[(j-1).coerceAtLeast(0)];val b=s.points[(j+1).coerceAtMost(s.points.lastIndex)]
-                    val bearing=Math.toDegrees(atan2((b.longitude-a.longitude)*cos(Math.toRadians(a.latitude)),b.latitude-a.latitude))
-                    NavigationSimulationRoute.offset(g,bearing,offset.toDouble())
-                }
+                val shifted=parallel(offset.toDouble())
                 stroke(path(shifted),Color.rgb(250,251,255),.20f,true)
             }
         }
         // Explicitly virtual crossing positions, never used as pedestrian/signal evidence.
         for(d in listOf(route.turnDistance-8,route.turnDistance+54)) {
             val pos=local(route.at(d));c.save();c.translate(pos.x,pos.y)
-            c.rotate((route.bearing(d)-route.bearing(0.0)).toFloat())
+            c.rotate((route.bearing(d)-f.bearing).toFloat())
             // The route origin is the middle of lane three on approach, then a single connector lane.
             val crossing=if(d<route.turnDistance)RectF(-8.75f,-1.6f,1.75f,1.6f) else RectF(-1.75f,-1.6f,1.75f,1.6f)
-            art.crossing(c,crossing)
+            art.figma?.draw(c,"crosswalk",crossing) ?: art.crossing(c,crossing)
             c.restore()
         }
-        stroke(path(route.points),Color.rgb(169,186,229),1.2f)
+
         stroke(path(f.planned),Color.rgb(165,196,255),1.9f)
         stroke(path(f.planned),Color.rgb(64,127,242),.92f)
         // The authored route follows lane 3 at the junction; adjacent approach lanes continue straight.
@@ -76,7 +85,7 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
                 val mark=local(NavigationSimulationRoute.offset(route.at(distance),bearing,(lane-3)*3.5))
                 c.save()
                 c.translate(mark.x,mark.y)
-                c.rotate((bearing-route.bearing(0.0)).toFloat())
+                c.rotate((bearing-f.bearing).toFloat())
                 val arrow=Path().apply {
                     moveTo(0f,2f)
                     if(lane==3) {
@@ -93,23 +102,28 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
         c.restore()
         if(showCautions && f.turnRemaining<=140 && f.distance<=route.turnDistance+30) {
             val warning=local(route.at(route.turnDistance+14))
-            val x=width*.52f+warning.x*scale;val y=height*.70f+warning.y*scale*projection
+            val x=anchorX+warning.x*scale;val y=anchorY+warning.y*scale*projection
             val size=width*.075f
             art.figma?.draw(c,"warning_marker",RectF(x-size/2,y-size,x+size/2,y))
         }
         // Original app illustrations are anchored beside the road, and follow the geographic camera.
-        listOf(0.0 to -19.0,45.0 to 16.0,95.0 to -18.0,145.0 to 16.0).forEach {(d,offset)->
+        listOf(0.0 to -19.0,45.0 to 16.0,95.0 to -18.0,145.0 to 16.0,route.turnDistance-25 to -18.0,route.turnDistance+5 to 15.0,route.turnDistance-50 to 19.0).forEachIndexed {index,(d,offset)->
             val pos=local(NavigationSimulationRoute.offset(route.at(d),route.bearing(d),offset))
-            val x=width*.52f+pos.x*scale;val y=height*.70f+pos.y*scale*projection
-            val w=width*.105f;val h=w*1.306f
-            art.tree(c,x-w/2,y-h,w,h)
+            val x=anchorX+pos.x*scale;val y=anchorY+pos.y*scale*projection
+            val variant=index%3
+            val w=width*listOf(172f,175f,284f)[variant]/1700f;val h=w*1.306f
+            val icon=listOf("road_tree","road_tree_far","road_tree_near")[variant]
+            art.figma?.draw(c,icon,RectF(x-w/2,y-h,x+w/2,y)) ?: art.tree(c,x-w/2,y-h,w,h)
         }
-        c.save();c.translate(width*.52f,height*.70f);c.rotate((f.bearing-route.bearing(0.0)).toFloat())
-        val w=width*.085f;val h=w/1.047f
-        art.car(c,RectF(-w/2,-h/2,w/2,h/2));c.restore()
+        c.save();c.translate(anchorX,anchorY)
+        // The original 357×286 Figma export has a 151px-wide opaque body centered at (169,132).
+        val pixelScale=scale*NavigationSimulationRoute.CAR_WIDTH.toFloat()/151f
+        val vehicleBounds=RectF(-169f*pixelScale,-132f*pixelScale,188f*pixelScale,154f*pixelScale)
+        art.figma?.draw(c,"drive_car",vehicleBounds) ?: art.car(c,vehicleBounds)
+        c.restore()
         p.style=Paint.Style.FILL;p.typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL);p.textSize=width*.018f;p.color=Color.rgb(94,100,121)
         // The host draws attribution in a reserved HUD slot, above the navigation tabs.
-        c.drawText(if(f.distance<route.turnDistance)"창룡대로" else "대학로",width*.40f,height*.61f,p)
+        c.drawText(if(f.distance<route.turnDistance)"창룡대로" else "대학로",anchorX-width*.09f,anchorY-height*.15f,p)
     }
     private fun drawParking(c: Canvas,f: NavigationSimulationFrame,route: NavigationSimulationRoute) {
         c.drawColor(Color.rgb(229,232,241))

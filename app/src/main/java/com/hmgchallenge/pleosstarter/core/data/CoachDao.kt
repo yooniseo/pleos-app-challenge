@@ -7,6 +7,8 @@ import com.hmgchallenge.pleosstarter.core.data.entity.*
 @Dao
 interface CoachDao {
     @Query("SELECT * FROM AppSnapshot WHERE `key` = :key") fun snapshot(key: String): AppSnapshot?
+    @Query("INSERT OR IGNORE INTO AppSnapshot (`key`,value,updatedAt) SELECT 'recommendation-archive:' || tripId,'1',:at FROM Trip WHERE endedAt IS NOT NULL")
+    fun archiveRecommendationInputs(at: Long)
     @Upsert fun saveSnapshot(value: AppSnapshot)
     @Query("DELETE FROM PracticeCompletion WHERE profile = :profile") fun clearCompletions(profile: String)
     @Upsert fun saveCompletions(value: List<PracticeCompletion>)
@@ -22,7 +24,7 @@ interface CoachDao {
     @Upsert fun saveTrip(value: Trip)
     @Query("SELECT * FROM Trip WHERE tripId=:id") fun trip(id: String): Trip?
     @Query("SELECT * FROM Trip ORDER BY startedAt DESC LIMIT :limit") fun recentTrips(limit: Int): List<Trip>
-    @Query("SELECT * FROM Trip WHERE source=:source AND endedAt IS NOT NULL ORDER BY startedAt DESC LIMIT :limit")
+    @Query("SELECT * FROM Trip WHERE source=:source AND endedAt IS NOT NULL AND NOT EXISTS (SELECT 1 FROM AppSnapshot a WHERE a.`key` = 'recommendation-archive:' || Trip.tripId) ORDER BY startedAt DESC LIMIT :limit")
     fun recentTripsBySource(source: String,limit: Int): List<Trip>
     @Upsert fun saveSample(value: TripSample)
     @Query("SELECT * FROM TripSample WHERE tripId=:id ORDER BY t") fun samples(id: String): List<TripSample>

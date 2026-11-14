@@ -63,8 +63,17 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
             text(c,if(good==null)"" else (0 until minOf(2,good.length())).joinToString("\n") {"✓ "+fit(good.getString(it),30)},835f,640f,26f)
             text(c,if(nextAll==null)"" else (0 until minOf(2,nextAll.length())).joinToString("\n") {"• "+fit(nextAll.getString(it),31)},835f,735f,25f,Color.rgb(125,29,32))
         }else {
-            text(c,if(vehicleRecord)"신호 조건 충족 $completed / $target" else "이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)
-            text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(6,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,580f,25f)
+            val signal=s?.scores?.get(DrivingSkill.TURN_SIGNAL)
+            text(c,if(signal!=null)"시연 깜빡이 ${signal}점 · +${earned} P" else if(vehicleRecord)"신호 조건 충족 $completed / $target" else "이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)
+            val changes=s?.laneSignals.orEmpty()
+            if(changes.isNotEmpty()) {
+                val results=changes.mapIndexed {index,value->
+                    val outcome=when(value) {"RIGHT"->"오른쪽 ON · +1회";"LEFT"->"왼쪽 ON · +0회";else->"OFF · +0회"}
+                    "${index+1}차 변경 $outcome"
+                }
+                text(c,results.joinToString("   /   "),835f,574f,24f,Palette.ink,true)
+            }
+            text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(6,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,if(changes.isEmpty())580f else 620f,23f)
             text(c,nextAll?.optString(0).orEmpty().take(35),835f,805f,27f)
         }
 

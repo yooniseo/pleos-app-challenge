@@ -42,7 +42,10 @@ class SharedCoachRepository(val database: TripDatabase) {
     };notify(key);true}.getOrElse {lastError=it.cause?.message ?: it.message;false}
 
     /** Snapshot plus queryable evidence/quests/events commit in one transaction. Legacy prefs stay intact. */
-    fun saveQuest(profile: String,raw: String): Boolean=write("quest:$profile") {persistQuest(profile,raw)}
+    fun saveQuest(profile: String,raw: String,observation: CoachingEvent?=null): Boolean=write("quest:$profile") {
+        persistQuest(profile,raw)
+        observation?.let {dao.saveEvent(it)}
+    }
     /** Begin a fresh demo progression, retaining the old evidence for historical reports. */
     fun resetDemoQuest(raw: String): Boolean=write("quest:demo") {
         val root=JSONObject(raw)
@@ -50,6 +53,10 @@ class SharedCoachRepository(val database: TripDatabase) {
         val at=System.currentTimeMillis();val archive="demo-archive:${UUID.randomUUID()}"
         dao.snapshot("quest:demo")?.let {dao.saveSnapshot(AppSnapshot(archive,it.value,at))}
         dao.archiveDemoCompletions(archive)
+        dao.archiveRecommendationInputs(at)
+        for(source in listOf("VEHICLE","SIMULATION")) {
+            dao.snapshot("vehicle-quests:$source")?.let {dao.saveSnapshot(AppSnapshot("recommendation-baseline:$source",it.value,at))}
+        }
         dao.saveSnapshot(AppSnapshot("demo-reset-at",at.toString(),at))
         persistQuest("demo",raw)
     }
@@ -145,7 +152,7 @@ class SharedCoachRepository(val database: TripDatabase) {
         meta.put("status",if(complete)"COMPLETE" else "INTERRUPTED")
         dao.saveSnapshot(AppSnapshot("trip:$id",meta.toString(),at));buildReport(id,at)
         if(complete && meta.optString("speedSource")=="REPLAY") {
-            val plan=replayPractice(meta.optString("lesson"),null)
+            val plan=computeRecommendations("REPLAY").recommendations.firstOrNull()
             if(plan!=null)dao.saveEvent(CoachingEvent("$id:next-practice",id,"NEXT_PRACTICE",at,"SIMULATION",
                 JSONObject().put("lesson",meta.getString("lesson")).put("recommendationId",plan.id).put("skill",plan.weakness).toString()))
         }
@@ -213,13 +220,35 @@ class SharedCoachRepository(val database: TripDatabase) {
         }
         if(notes.any {it.category=="STEERING"})good.add("핸들 따라하기에서 직접 목표를 맞췄어요")
         val next=attempts.filterNot {it.success}.takeLast(3).map {it.result.message}.toMutableList()
-        // 자동 시연(REPLAY)은 정해진 속도로 움직이므로 실력 점수를 매기지 않고 기존 문구를 유지한다.
+        // Only newly recorded lane-entry observations can produce a replay signal score.
+        val maneuvers=dao.events(id).filter {it.type=="SCENARIO_PRACTICED" || it.type=="SCENARIO_SKIPPED"}
+            .map {JSONObject(it.payload)}
+        val laneSignals=maneuvers.filter {it.optJSONObject("context")?.optString("kind")=="LANE_RIGHT"}
+            .map {it.optString("detail")}.filter {it in setOf("RIGHT","LEFT","OFF")}
+        val replayScores=JSONObject().apply {
+            val roadLesson=dao.snapshot("trip:$id")?.value?.let(::JSONObject)?.optString("lesson")
+            if(trip?.source=="REPLAY" && roadLesson in setOf("COMBINED","LANE","TURN")) {
+                listOf(DrivingSkill.SMOOTH_ACCEL,DrivingSkill.BRAKING).forEach {skill->
+                    analysis.scores[skill]?.let {put(skill.name,it)}
+                }
+                put("lowConfidence",analysis.lowConfidence)
+                // The authored course calls for 10 km/h at the turn. Allow one km/h for discrete ticks.
+                val turnKmh=maneuvers.firstOrNull {it.optJSONObject("context")?.optString("kind")=="TURN_RIGHT" &&
+                    it.optString("detail").toDoubleOrNull()!=null}?.getString("detail")?.toDouble()
+                if(turnKmh!=null)put(DrivingSkill.TURN_SLOWDOWN.name,if(turnKmh<=11.0)100 else 0)
+            }
+            if(laneSignals.isNotEmpty()) {
+                val successes=laneSignals.count {it=="RIGHT"}
+                put(DrivingSkill.TURN_SIGNAL.name,Math.round(100.0*successes/laneSignals.size))
+                put("laneSignals",JSONArray(laneSignals)).put("signalAttempts",laneSignals.size).put("signalSuccesses",successes)
+            }
+        }.toString()
         val replay=trip?.source=="REPLAY" || dao.snapshot("trip:$id")?.value?.let(::JSONObject)?.optBoolean("scenario")==true
         if(replay && analysis.events.isNotEmpty())next.add("속도 변화가 컸던 ${analysis.events.size}개 구간을 당시 상황과 함께 돌아보세요")
         val feedback=FeedbackWriter.write(analysis.takeUnless {replay},
             notes.filter {it.category!="STEERING"}.map {NoteLine(it.t,it.rawText,it.category)},good,next)
         dao.saveReport(TripReport(id,at,if(replay)"차근차근 · ${practice.size}개 동작 연습 기록" else feedback.headline,
-            JSONArray(feedback.good).toString(),JSONArray(feedback.next).toString(),if(replay)"{}" else scoresJson(analysis)))
+            JSONArray(feedback.good).toString(),JSONArray(feedback.next).toString(),if(replay)replayScores else scoresJson(analysis)))
     }
 
     /**
@@ -242,9 +271,12 @@ class SharedCoachRepository(val database: TripDatabase) {
             when(it.category){"INTERSECTION"->"RIGHT_TURN";"SPEED"->"SPEED_CONTROL";else->it.category}
         }
         val board=com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.decode(dao.snapshot("vehicle-quests:$source")?.value)
+        val baseline=com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.decode(dao.snapshot("recommendation-baseline:$source")?.value)
         val vehicle=com.hmgchallenge.pleosstarter.feature.quests.QuestCatalog.all.associate {q->
             val p=board.progressOf(q.questId)
-            q.questId to VehicleProgress(p.level,p.steps,com.hmgchallenge.pleosstarter.feature.quests.QuestProgress.STEPS_PER_LEVEL)
+            val successes=(p.successCount-baseline.progressOf(q.questId).successCount).coerceAtLeast(0)
+            val perLevel=com.hmgchallenge.pleosstarter.feature.quests.QuestProgress.STEPS_PER_LEVEL
+            q.questId to VehicleProgress(1+successes/perLevel,successes%perLevel,com.hmgchallenge.pleosstarter.feature.quests.QuestProgress.STEPS_PER_LEVEL)
         }
         val result=QuestRecommender.recommend(scored,notes,vehicle)
         if(source!="REPLAY")return result
@@ -287,7 +319,7 @@ class SharedCoachRepository(val database: TripDatabase) {
     private fun parseScores(trip: Trip,json: String): TripScores {
         val root=runCatching {JSONObject(json)}.getOrDefault(JSONObject())
         val scores=DrivingSkill.values().associateWith {s->if(root.has(s.name) && !root.isNull(s.name))root.optInt(s.name) else null}
-        return TripScores(trip.tripId,trip.startedAt,scores,root.optBoolean("lowConfidence",true))
+        return TripScores(trip.tripId,trip.startedAt,scores,root.optBoolean("lowConfidence",true),root.optJSONArray("laneSignals")?.strings().orEmpty())
     }
     private fun JSONArray.objects()=(0 until length()).map {getJSONObject(it)}
     private fun JSONArray.strings()=(0 until length()).map {getString(it)}

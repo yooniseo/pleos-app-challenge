@@ -25,6 +25,19 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
     val startDistance = if(lesson==RoadLesson.TURN)(course.turnDistance-160).coerceAtLeast(0.0) else 0.0
     val endDistance = if(lesson==RoadLesson.LANE)laneChanges.last().end+minOf(40.0,course.turnDistance*.1) else course.length
     var distance = startDistance; private set
+    var turnEntryKmh: Double?=null
+        private set
+    private val laneStartSignals=mutableMapOf<Int,Indicator>()
+    fun laneStartSignal(index: Int)=laneStartSignals[index]
+    fun replaySignal(): Indicator {
+        val lead=(speedMps*4).coerceIn(18.0,50.0)
+        val lane=nextLaneChange
+        val signalLane=lane!=null && !(lesson==RoadLesson.COMBINED && completedLaneChanges==0) &&
+            distance in (lane.start-lead)..lane.end
+        val signalTurn=(lesson==RoadLesson.TURN || lesson==RoadLesson.COMBINED) &&
+            distance in (course.turnDistance-lead)..(course.turnDistance+54)
+        return if(signalLane || signalTurn)Indicator.RIGHT else Indicator.OFF
+    }
     var indicator = Indicator.UNKNOWN
     var started = false; private set
     var speedMps = 0.0; private set
@@ -41,7 +54,7 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
     val parkingGear get()=if(complete || !started)"P" else if(distance<5)"D" else "R"
     val progress get() = (distance-startDistance)/(endDistance-startDistance)
     fun start() { started = true }
-    fun advance(elapsedMs: Long, vehicleMps: Double?, fresh: Boolean) {
+    fun advance(elapsedMs: Long, vehicleMps: Double?, fresh: Boolean, signalOverride: Indicator?=null) {
         if(lesson==RoadLesson.PARKING && started && distance>=5 && parkingWaitMs<5000) {
             if(elapsedMs in 1..1000)parkingWaitMs+=elapsedMs
             speedMps=0.0;return
@@ -68,6 +81,11 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
         // Do not extrapolate over a lifecycle interruption or a stalled UI thread.
         if (elapsedMs in 1..1000) {
             val next=(distance + speedMps*elapsedMs/1000.0).coerceAtMost(endDistance)
+            if(source==ScenarioSpeed.REPLAY && lesson in setOf(RoadLesson.COMBINED,RoadLesson.TURN) &&
+                distance<course.turnDistance && next>=course.turnDistance)turnEntryKmh=speedMps*3.6
+            if(source==ScenarioSpeed.REPLAY)nextLaneChange?.let {lane->
+                if(distance<lane.start && next>=lane.start)laneStartSignals[completedLaneChanges]=signalOverride ?: replaySignal()
+            }
             distance=if(lesson==RoadLesson.PARKING && distance<5 && next>=5)5.0 else next
         }
         if (complete) speedMps = 0.0

@@ -19,10 +19,10 @@ class SimpleScenarioQuests(val tripId: String, private val startedAt: Long) {
              assistance: (CoachSkill)->AssistanceUsed = {AssistanceUsed.DETAILED}): QuestState {
         if (!state.demo || !scenario.started || state.session?.tripId != tripId) return state
         var next = state
-        fun event(kind: SituationKind, type: SituationEventType,maneuver: String="road") {
+        fun event(kind: SituationKind, type: SituationEventType,maneuver: String="road",detail: String="") {
             // Stable context permits duplicate-safe replay of this small event sequence.
             val ctx = SituationContext(tripId,"$tripId:$maneuver:${kind.id}","$tripId:$maneuver",kind,QuestEvidence.SIMULATION,startedAt)
-            next = QuestEngine.acceptEvent(next,SituationEvent("${ctx.occurrenceId}:$type",ctx,type,now,
+            next = QuestEngine.acceptEvent(next,SituationEvent("${ctx.occurrenceId}:$type",ctx,type,now,detail=detail,
                 confirmation=if(type==SituationEventType.PRACTICED) ConfirmationBasis.DEMO else ConfirmationBasis.UNKNOWN,
                 assistanceUsed=assistance(kind.skill)))
         }
@@ -37,13 +37,17 @@ class SimpleScenarioQuests(val tripId: String, private val startedAt: Long) {
         if (scenario.lesson in setOf(RoadLesson.COMBINED,RoadLesson.LANE)) {
             scenario.laneChanges.forEachIndexed {i,change->
                 if(i<=scenario.completedLaneChanges)enter(SituationKind.LANE_RIGHT,"lane-$i")
-                if(scenario.distance>=change.end)event(SituationKind.LANE_RIGHT,SituationEventType.PRACTICED,"lane-$i")
+                if(scenario.distance>=change.end) {
+                    val signal=scenario.laneStartSignal(i)
+                    val outcome=if(signal==null || signal==Indicator.RIGHT)SituationEventType.PRACTICED else SituationEventType.SKIPPED
+                    event(SituationKind.LANE_RIGHT,outcome,"lane-$i",signal?.name.orEmpty())
+                }
             }
         }
         if (scenario.lesson in setOf(RoadLesson.COMBINED,RoadLesson.TURN) && (scenario.lesson == RoadLesson.TURN || scenario.laneDone)) {
             enter(SituationKind.TURN_RIGHT)
             if (scenario.complete) {
-                event(SituationKind.TURN_RIGHT,SituationEventType.PRACTICED)
+                event(SituationKind.TURN_RIGHT,SituationEventType.PRACTICED,detail=scenario.turnEntryKmh?.toString().orEmpty())
                 enter(SituationKind.INTERSECTION_EXIT)
                 event(SituationKind.INTERSECTION_EXIT,SituationEventType.PRACTICED)
                 if(scenario.lesson==RoadLesson.COMBINED && scenario.source==ScenarioSpeed.REPLAY) {

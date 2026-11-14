@@ -25,6 +25,7 @@ class ParkingCanvas(context: Context,assets: ProductIllustrations,private val se
         text(c,"STEP 0$step",97f,407f,26f,Palette.lime,true)
         text(c,listOf("주차칸 옆에\n천천히 맞춰요","멈춘 뒤 뒤쪽과\n양옆을 확인해요","차량 후면을\n주차선과 나란하게","핸들을 풀고\n정렬을 마무리해요")[step-1],97f,450f,25f,Color.WHITE,true)
         box(c,1210f,40f,355f,84f,Color.argb(242,20,25,31),42f)
+        if(session.selectedLesson==RoadLesson.COMBINED)text(c,"Quest 3/3 · 주차 마무리",65f,73f,27f,Color.WHITE,true)
         text(c,"후진 주차  STEP 0$step",1240f,60f,29f,Palette.lime,true)
         text(c,"가이드에 맞춰 천천히 움직여 주세요",490f,73f,28f,Color.WHITE)
         box(c,1210f,365f,435f,360f,Color.argb(235,20,25,31),24f)
@@ -34,6 +35,6 @@ class ParkingCanvas(context: Context,assets: ProductIllustrations,private val se
         box(c,577f,1018f,546f,60f,Color.argb(220,20,25,31),24f)
         listOf("R","N","D").forEachIndexed {i,gear->text(c,gear,673f+145*i,1024f,34f,if(s.parkingGear==gear)Palette.lime else Color.rgb(174,186,203),true)}
         if(s.parkingGear=="P")text(c,"P",1135f,1024f,34f,Palette.lime,true)
-        text(c,"DEMO · 가상 주차 연습 · 실제 차량 제어 없음",60f,1045f,22f,Color.WHITE)
+        text(c,"DEMO · 가상 주차 연습",60f,1045f,22f,Color.WHITE)
     }
 }

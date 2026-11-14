@@ -3,7 +3,7 @@ package com.hmgchallenge.pleosstarter.driving
 import kotlin.math.*
 
 /** OSM/OSRM road geometry. Position is authored simulation progress, never vehicle GPS. */
-class NavigationSimulationRoute(val points: List<GeoPoint>, private val maneuverDistance: Double?=null) {
+class NavigationSimulationRoute(val points: List<GeoPoint>, private val maneuverDistance: Double?=null, private val receivingRoad: List<GeoPoint> = emptyList()) {
     private val segments=points.zipWithNext {a,b->metres(a,b)}
     val length=segments.sum()
     val turnDistance=maneuverDistance ?: segments.first()
@@ -25,10 +25,17 @@ class NavigationSimulationRoute(val points: List<GeoPoint>, private val maneuver
         val junction=points.indices.minByOrNull {metres(points[it],at(turnDistance))}!!
         fun heading(a: GeoPoint,b: GeoPoint)=atan2((b.longitude-a.longitude)*cos(Math.toRadians(a.latitude)),b.latitude-a.latitude)
         val lane=points.mapIndexed {i,p->
-            if(i>junction)p else {
+            if(i>junction) {
+                // Match OSRM nodes to the two-way receiving road, then follow the rightmost lane.
+                val node=receivingRoad.indexOfFirst {metres(it,p)<1.0}
+                if(node>=0 || i==points.lastIndex && receivingRoad.isNotEmpty()) {
+                    val yaw=if(i<points.lastIndex)heading(p,points[i+1]) else heading(points[i-1],p)
+                    offset(p,Math.toDegrees(yaw),1.5*LANE_WIDTH)
+                } else p
+            } else {
                 val a=points[(i-1).coerceAtLeast(0)];val b=points[(i+1).coerceAtMost(points.lastIndex)]
                 val yaw=if(i==junction && i>0)heading(a,p) else heading(a,b)
-                offset(p,Math.toDegrees(yaw),3.5)
+                offset(p,Math.toDegrees(yaw),LANE_WIDTH)
             }
         }
         val tangents=lane.indices.map {i->
@@ -82,10 +89,13 @@ class NavigationSimulationRoute(val points: List<GeoPoint>, private val maneuver
         return NavigationSimulationRoute(result,turn)
     }
     companion object {
-        fun reference(route: ReferenceRoute): NavigationSimulationRoute {
+        const val LANE_WIDTH=3.5
+        const val CAR_WIDTH=1.85
+        const val CAR_LENGTH=4.65
+        fun reference(route: ReferenceRoute,receivingRoad: List<GeoPoint> = emptyList()): NavigationSimulationRoute {
             val index=route.firstRightTurn?.let {turn->route.points.indices.minByOrNull {metres(route.points[it],turn)}}
             val distance=index?.let {route.points.take(it+1).zipWithNext {a,b->metres(a,b)}.sum()}
-            return NavigationSimulationRoute(route.points,distance)
+            return NavigationSimulationRoute(route.points,distance,receivingRoad)
         }
         fun metres(a: GeoPoint,b: GeoPoint)=hypot((b.longitude-a.longitude)*111_320*cos(Math.toRadians(a.latitude)),(b.latitude-a.latitude)*111_320)
         fun offset(p: GeoPoint,bearing: Double,rightMetres: Double): GeoPoint {

@@ -22,11 +22,16 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
             quest=recovered
         }
     }
+    var simulatedBeltBuckled: Boolean?=null
+        private set
+    var simulatedBatteryPercent: Int?=null
+        private set
     var scenario=SimpleRoadScenario(course); private set
     var tripId: String?=null; private set
     var paused=true; private set
     var error: String?=null; private set
     var completedAt: Long?=null; private set
+    var onLaneResult: (Int,Indicator)->Unit={_,_->}
     var onMilestone: (Boolean)->Unit={}
     var onParkingStarted: ()->Unit={}
     var selectedLesson=RoadLesson.COMBINED; private set
@@ -61,6 +66,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
         scenario=SimpleRoadScenario(course,lesson,if(lesson==RoadLesson.PARKING)ScenarioSpeed.REPLAY else source)
         selectedLesson=lesson;selectedSpeed=scenario.source;roadMetres=0.0
         totalTripMetres=scenario.endDistance-scenario.startDistance+if(lesson==RoadLesson.COMBINED)ParkingLessonGeometry.course().length else 0.0
+        simulatedBeltBuckled=null;simulatedBatteryPercent=null
         tripId=null;link=null;paused=true;completedAt=null;lastKey="";finalized=false;error=null
         return true
     }
@@ -84,7 +90,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
     fun refresh() {quest=store.load()}
     fun tick(elapsedMs: Long, monotonic: Long, vehicleMps: Double?, fresh: Boolean, now: Long=System.currentTimeMillis()) {
         if(!scenario.started || finalized || paused)return
-        scenario.advance(elapsedMs,vehicleMps,fresh)
+        scenario.advance(elapsedMs,vehicleMps,fresh,indicatorOverride)
         tripId?.let {id->if(lastSample==0L || monotonic-lastSample>=1000) {
             val kmh=if(scenario.source==ScenarioSpeed.VEHICLE)vehicleMps?.takeIf {fresh && it.isFinite() && it>=0}?.times(3.6)?.toFloat()
                 else (scenario.speedMps*3.6).toFloat()
@@ -102,6 +108,10 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
                 if(next!=before && !store.save(next)){fail();return}
                 quest=next;lastKey=key
                 if(next.evidence.size>before.evidence.size)onMilestone(scenario.complete && !continuingToParking)
+                val index=scenario.completedLaneChanges-1
+                if(index>=0 && next!=before)scenario.laneStartSignal(index)?.let {signal->
+                    if(!scenario.complete)onLaneResult(index,signal)
+                }
             }
         }
         if(scenario.complete && continuingToParking) {
@@ -138,7 +148,21 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
             val before=store.load()
             val next=QuestEngine.recordPractice(before.copy(completed=before.completed+definition.id),
                 PracticeEvidence("$id:checklist:${skill.name}",skill,com.hmgchallenge.pleosstarter.quests.EvidenceSource.SIMULATION,now,id))
-            if(!store.save(next))return fail()
+            val inputs=org.json.JSONObject()
+            if(skill==CoachSkill.PREPARATION) {
+                inputs.put("driverSeatBeltBuckled",true).put("headlampMode","Auto").put("batteryPercent",82)
+            }else {
+                inputs.put("gear","P").put("parkingBrakeOn",true).put("windowsClosed",true).put("headlampsOn",false)
+            }
+            val payload=org.json.JSONObject().put("phase",skill.name).put("signals",inputs)
+                .put("confirmedItems",org.json.JSONArray(definition.checks))
+            val observation=com.hmgchallenge.pleosstarter.core.data.entity.CoachingEvent(
+                "$id:checklist-signals:${skill.name}",id,"CHECKLIST_SIGNALS",now,"SIMULATION",payload.toString())
+            if(!store.save(next,observation))return fail()
+            if(skill==CoachSkill.PREPARATION) {
+                simulatedBeltBuckled=inputs.getBoolean("driverSeatBeltBuckled")
+                simulatedBatteryPercent=inputs.getInt("batteryPercent")
+            }
             quest=next
         }
         return true

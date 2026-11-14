@@ -5,7 +5,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /** 리포트 1개에서 읽은 점수. 최신 주행이 앞에 온다. */
-data class TripScores(val tripId: String,val startedAt: Long,val scores: Map<DrivingSkill,Int?>,val lowConfidence: Boolean)
+data class TripScores(val tripId: String,val startedAt: Long,val scores: Map<DrivingSkill,Int?>,val lowConfidence: Boolean,val laneSignals: List<String> = emptyList())
 
 /** 차량 신호 퀘스트(팀 QuestBoard)의 현재 진행. */
 data class VehicleProgress(val level: Int,val steps: Int,val target: Int)

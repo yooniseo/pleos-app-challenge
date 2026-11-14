@@ -51,7 +51,7 @@ fun Instrumentation.runQuestDesignValidation() {
             sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);waitForIdleSync()
         }
         proof.put("nativeControls","PASS: search opens practice selection, maneuver card opens route steps, settings opens coach preferences")
-        val epoch=System.currentTimeMillis()
+        val epoch=System.currentTimeMillis()-6*200_000L
         repeat(6) {i->onMain {
             app.select(RoadLesson.LANE);check(app.session.start(epoch+i*200_000))
             var ticks=0
@@ -76,7 +76,8 @@ fun Instrumentation.runQuestDesignValidation() {
         onMain {app.showQuestProgress();check(app.questDiagnostics()?.get("LANE_CHANGE")==6)}
         check(repository.database.openHelper.readableDatabase.query("SELECT progress FROM Quest WHERE questId='demo:practice:LANE_CHANGE'").use {it.moveToFirst() && it.getInt(0)==6})
         proof.put("sixReplays","PASS: 6/30 in UI and Room; no vehicle-signal selector; tab switch and DB reopen preserve progress; VEHICLE remains zero")
-        var id="";var combinedAt=0L;var sawApproach=false;var sawTurn=false
+        var id="";var combinedAt=0L;var sawApproach=false;var sawTurn=false;var sawExit=false
+        var approachHeading=0.0
         onMain {
             app.select(RoadLesson.COMBINED)
             app.startPrepared(setOf(0,1,2,3));id=app.session.tripId!!;combinedAt=repository.trip(id)!!.startedAt
@@ -97,7 +98,7 @@ fun Instrumentation.runQuestDesignValidation() {
         proof.put("navigationControls","PASS: 2D/3D changes projection without restarting the trip; compact quest variant renders")
         var ticks=0
         while(app.session.completedAt==null && ticks<2400) {
-            var captureApproach=false;var captureTurn=false
+            var captureApproach=false;var captureTurn=false;var captureExit=false
             onMain {
                 repeat(10) {
                     ticks++;app.session.tick(100,SystemClock.elapsedRealtime()+ticks*100,null,false,combinedAt+ticks*100)
@@ -105,13 +106,20 @@ fun Instrumentation.runQuestDesignValidation() {
                 val scenario=app.session.scenario
                 if(scenario.lesson==RoadLesson.COMBINED && !sawApproach && scenario.frame().turnRemaining in 40.0..100.0) {
                     sawApproach=true;captureApproach=true;app.show(AppScreen.MAP)
-                }else if(scenario.lesson==RoadLesson.COMBINED && scenario.frame().turnRemaining in 1.0..24.0 && !sawTurn) {sawTurn=true;captureTurn=true;app.show(AppScreen.MAP)}
+                    approachHeading=app.navigationDiagnostics()!!.getValue("mapHeading").toDouble()
+                }else if(scenario.lesson==RoadLesson.COMBINED && scenario.frame().turnRemaining in 1.0..24.0 && !sawTurn) {sawTurn=true;captureTurn=true;app.show(AppScreen.MAP)} else if(!sawExit && scenario.lesson==RoadLesson.COMBINED && scenario.distance>scenario.course.turnDistance+75) {
+                    app.show(AppScreen.MAP)
+                    val exitHeading=app.navigationDiagnostics()!!.getValue("mapHeading").toDouble()
+                    check(kotlin.math.abs((exitHeading-approachHeading+540)%360-180)>25) {"Map did not turn with the route"}
+                    captureExit=true;sawExit=true
+                }
             }
             waitForIdleSync()
             if(captureApproach)capture(app,"02-mascot-approach")
             if(captureTurn)capture(app,"03-caution-turn")
+            if(captureExit)capture(app,"12-map-after-turn")
         }
-        check(app.session.completedAt!=null && sawApproach && sawTurn)
+        check(app.session.completedAt!=null && sawApproach && sawTurn && sawExit)
         check(repository.completedSkills(id)==setOf("PREPARATION","LANE_CHANGE","INTERSECTION","SPEED","PARKING"))
         onMain {
             check(app.session.confirmChecklist(CoachSkill.FINISH,setOf(0,1,2)))
@@ -119,7 +127,7 @@ fun Instrumentation.runQuestDesignValidation() {
             check(app.session.quest.practiceCount(CoachSkill.FINISH)==1)
             app.showFeedback(id)
         }
-        check(repository.completedSkills(id).size==6 && repository.tripPoints(id)==600)
+        check(repository.completedSkills(id).size==6 && repository.tripPoints(id)==400)
         check(repository.report(id)?.goodPoints?.let(::JSONArray)?.length()==6)
         capture(app,"04-six-areas-completed")
         onMain {app.show(AppScreen.MAP);app.window.decorView.findViewWithTag<Button>("coach_toggle").performClick()}
@@ -127,7 +135,7 @@ fun Instrumentation.runQuestDesignValidation() {
         onMain {
             app.window.decorView.findViewWithTag<Button>("coach_toggle").performClick()
             app.window.decorView.findViewWithTag<Button>("map_quest_banner").performClick()
-            check(app.screen==AppScreen.QUESTS && app.questDiagnostics()?.get("LANE_CHANGE")==8)
+            check(app.screen==AppScreen.QUESTS && app.questDiagnostics()?.get("LANE_CHANGE")==7)
             check(CoachSkill.values().all {app.questDiagnostics()?.get(it.name)!!>0})
         }
         capture(app,"06-six-area-quest-board")
@@ -140,14 +148,39 @@ fun Instrumentation.runQuestDesignValidation() {
             check(repository.trip(cancelled)?.endedAt!=null)
             check(JSONObject(repository.snapshot("trip:$cancelled")!!).getString("status")=="INTERRUPTED")
             check(repository.tripPoints(cancelled)==0)
-            check(repository.completedSkills(id).size==6 && repository.tripPoints(id)==600)
+            check(repository.completedSkills(id).size==6 && repository.tripPoints(id)==400)
         }
         proof.put("routeCancel","PASS: partial trip ends as INTERRUPTED, no unearned reward, previous records preserved")
         onMain {app.finish()};waitForIdleSync();activity=null
         repository.close();repository=open();SharedCoachRepository.testOverride=repository
         check(repository.completedSkills(id).size==6 && repository.report(id)!=null)
         check(QuestStore(targetContext,true).load().practiceCount(CoachSkill.FINISH)==1)
-        proof.put("fullDemo","PASS: preparation checklist, two lane changes, turn, approach deceleration, parking, departure checklist; 6 areas / 7 evidence, one trip, 600P")
+        val signalScore=com.hmgchallenge.pleosstarter.analysis.DrivingSkill.TURN_SIGNAL
+        check(repository.scores(id)?.scores?.get(signalScore)==50)
+        val recorded=repository.scores(id)!!.scores
+        check(recorded.values.all {it!=null}) {"Combined replay missing measured scores: $recorded"}
+        val sensors=repository.events(id).filter {it.type=="CHECKLIST_SIGNALS"}
+        check(sensors.size==2 && sensors.all {it.source=="SIMULATION"})
+        check(sensors.any {JSONObject(it.payload).getJSONObject("signals").optBoolean("driverSeatBeltBuckled")})
+        check(sensors.any {JSONObject(it.payload).getJSONObject("signals").optBoolean("parkingBrakeOn")})
+        activity=launch();app=requireNotNull(activity);waitForIdleSync()
+        onMain {app.showRecommendations("REPLAY")}
+        waitForIdleSync();capture(app,"11-recent-four-scores")
+        onMain {app.showQuestProgress(); app.window.decorView.findViewWithTag<Button>("quest_reset").performClick()}
+        onMain {
+            val reset=android.view.inspector.WindowInspector.getGlobalWindowViews()
+                .mapNotNull {it.findViewById<Button>(android.R.id.button1)}.single {it.text=="초기화"}
+            check(reset.performClick())
+        }
+        onMain {
+            app.showRecommendations("REPLAY")
+            check(app.recommendationDiagnostics()?.tripCount==0)
+        }
+        capture(app,"10-reset-personalized")
+        check(repository.recommendations("REPLAY").let {it.tripCount==0 && it.recommendations.isEmpty() && it.averages.values.all {v->v==null}})
+        check(repository.scores(id)?.scores?.get(signalScore)==50)
+        proof.put("reset","Clears recommendation inputs, retains historical 50-point report")
+        proof.put("fullDemo","PASS: preparation checklist, two lane changes, turn, approach deceleration, parking, departure checklist; 6 areas / 6 evidence, one trip, 400P")
             .put("noFalseCredit","Departure blocked before parking; duplicate checklist does not increase progress; no headway or physical sensor success inferred")
             .put("source","SIMULATION only; actual user trips.db untouched")
         File(output,"proof.json").writeText(proof.toString(2))

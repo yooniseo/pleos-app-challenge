@@ -45,8 +45,8 @@ class QuestStore(context: Context, private val demo: Boolean) {
                 report.optionalInt("abruptAccelerationCount"), report.optionalInt("abruptBrakingCount")) }, assessments)
     }
 
-    fun save(state: QuestState): Boolean {
-        return repository.saveQuest(profile,encode(state))
+    fun save(state: QuestState,observation: com.hmgchallenge.pleosstarter.core.data.entity.CoachingEvent?=null): Boolean {
+        return repository.saveQuest(profile,encode(state),observation)
     }
     fun resetDemoProgress(): Boolean {
         require(demo) {"Only the demo profile can be reset here"}
