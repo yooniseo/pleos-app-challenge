@@ -18,6 +18,7 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
     private var course: NavigationSimulationRoute?=null
     private var frame: NavigationSimulationFrame?=null
     private var parking=false
+    var showCautions=false
     fun setFrame(route: NavigationSimulationRoute,value: NavigationSimulationFrame,parking: Boolean=false) {course=route;frame=value;this.parking=parking;invalidate()}
     fun diagnostics()=mapOf("visibleTiles" to "0","offlineRoads" to streets.size.toString(),"routePoints" to (course?.points?.size ?: 0).toString(),
         "marker" to (frame?.position?.let {"${it.latitude},${it.longitude}"} ?: ""),"size" to "${width}x$height")
@@ -66,6 +67,12 @@ class ScenarioRoadMapView(context: Context,private val art: com.hmgchallenge.ple
         stroke(path(f.planned),Color.rgb(165,196,255),1.9f)
         stroke(path(f.planned),Color.rgb(64,127,242),.92f)
         c.restore()
+        if(showCautions && f.turnRemaining<=140 && f.distance<=route.turnDistance+30) {
+            val warning=local(route.at(route.turnDistance+14))
+            val x=width*.52f+warning.x*scale;val y=height*.70f+warning.y*scale*.72f
+            val size=width*.075f
+            art.figma?.draw(c,"warning_marker",RectF(x-size/2,y-size,x+size/2,y))
+        }
         // Original app illustrations are anchored beside the road, and follow the geographic camera.
         listOf(0.0 to -19.0,45.0 to 16.0,95.0 to -18.0,145.0 to 16.0).forEachIndexed {i,(d,offset)->
             val pos=local(NavigationSimulationRoute.offset(route.at(d),route.bearing(d),offset))

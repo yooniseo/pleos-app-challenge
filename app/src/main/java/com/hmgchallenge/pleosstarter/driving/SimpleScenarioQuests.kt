@@ -46,6 +46,10 @@ class SimpleScenarioQuests(val tripId: String, private val startedAt: Long) {
                 event(SituationKind.TURN_RIGHT,SituationEventType.PRACTICED)
                 enter(SituationKind.INTERSECTION_EXIT)
                 event(SituationKind.INTERSECTION_EXIT,SituationEventType.PRACTICED)
+                if(scenario.lesson==RoadLesson.COMBINED && scenario.source==ScenarioSpeed.REPLAY) {
+                    enter(SituationKind.SPEED,"approach-deceleration")
+                    event(SituationKind.SPEED,SituationEventType.PRACTICED,"approach-deceleration")
+                }
             }
         }
         if (scenario.complete && finishTrip) next = QuestEngine.finishTrip(next,tripId,now)

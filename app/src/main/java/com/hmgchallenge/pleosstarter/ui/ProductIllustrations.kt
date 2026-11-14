@@ -1,10 +1,12 @@
 package com.hmgchallenge.pleosstarter.ui
 
 import android.graphics.*
+import android.content.Context
 import kotlin.math.*
 
-/** Original, resolution-independent artwork. Figma is a layout reference, not an asset source. */
-class ProductIllustrations {
+/** Dynamic vehicle/map artwork with the designer's local, individual coach illustration assets. */
+class ProductIllustrations(context: Context?=null) {
+    val figma=context?.let(::FigmaCoachAssets)
     private val p=Paint(Paint.ANTI_ALIAS_FLAG)
     private fun fill(color: Int) {p.shader=null;p.style=Paint.Style.FILL;p.color=color}
     private fun rounded(c: Canvas,r: RectF,radius: Float,color: Int) {fill(color);c.drawRoundRect(r,radius,radius,p)}
@@ -39,6 +41,7 @@ class ProductIllustrations {
         c.restore()
     }
     fun mascot(c: Canvas,r: RectF) {
+        figma?.let {it.draw(c,"mascot",r);return}
         c.save();c.translate(r.left,r.top);c.scale(r.width()/100,r.height()/100)
         fill(Color.rgb(216,244,234));c.drawCircle(50f,51f,47f,p)
         rounded(c,RectF(25f,53f,76f,96f),22f,Color.rgb(101,195,165))

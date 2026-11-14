@@ -53,7 +53,7 @@ class ChageunActivity: Activity() {
         // The debug-only distraction-optimized entry is deliberately restricted to the emulator.
         if((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0 && packageManager.hasSystemFeature("android.hardware.type.automotive") && !isEmulator()) {finish();return}
         window.statusBarColor=Color.WHITE;window.navigationBarColor=Color.WHITE
-        art=ProductIllustrations();telemetry=VehicleTelemetry(this)
+        art=ProductIllustrations(this);telemetry=VehicleTelemetry(this)
         val route=ReferenceRouteClient.parse(applicationContext.assets.open("road_reference/kgu-route.json").bufferedReader().use {it.readText()})
         session=ReplaySessionController(this,NavigationSimulationRoute.reference(route))
         vehicleQuests=VehicleQuestController(this).also {controller->controller.onCue={pendingVehicleSpeech=it}}
@@ -113,11 +113,12 @@ class ChageunActivity: Activity() {
         }
     }
     fun show(destination: AppScreen) {
+        if(destination==AppScreen.QUESTS)session.refresh()
         screen=destination;startButton=null;pauseButton=null;map=null
         val drawing: android.view.View=when(destination) {
             AppScreen.MAP->{
                 val layers=FrameLayout(this)
-                map=ScenarioRoadMapView(this,art).apply {setFrame(session.scenario.course,session.scenario.frame(),session.scenario.lesson==RoadLesson.PARKING)}
+                map=ScenarioRoadMapView(this,art).apply {showCautions=true;setFrame(session.scenario.course,session.scenario.frame(),session.scenario.lesson==RoadLesson.PARKING)}
                 canvas=DriveCanvas(this,art,session).apply {coachEnabled=coach}
                 layers.addView(map,FrameLayout.LayoutParams(-1,-1));layers.addView(canvas,FrameLayout.LayoutParams(-1,-1));layers
             }
@@ -138,9 +139,9 @@ class ChageunActivity: Activity() {
                     trip=id?.let(repository::trip);report=id?.let(repository::report);state=session.quest
                     complete=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)?.optString("status")=="COMPLETE" && repository.events(id).any {it.type=="PRACTICE_REWARD" && JSONObject(it.payload).optString("skill")=="PARKING"}
                     earned=id?.let(repository::tripPoints) ?: 0
-                    completed=id?.let {repository.events(it).count {e->e.type=="PRACTICE_REWARD"}} ?: 0
+                    completed=id?.let {repository.completedSkills(it).size} ?: 0
                     val metadata=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)
-                    target=metadata?.optInt("targetCount",if(metadata.optString("lesson")=="COMBINED")2 else 1) ?: 0
+                    target=if(metadata?.optString("lesson")=="COMBINED")6 else metadata?.optInt("targetCount",1) ?: 0
                     if(metadata?.optString("lesson")=="VEHICLE_QUEST") {
                         vehicleRecord=true
                         val attempts=repository.events(id!!).filter {it.type=="VEHICLE_QUEST_ATTEMPT"}.map {com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.decodeAttempt(it.payload)}
@@ -155,7 +156,9 @@ class ChageunActivity: Activity() {
         when(destination) {
             AppScreen.MAP->{
                 scene.button("설정", "settings",1500f,160f,155f,78f){settings()}
-                scene.button(if(coach)"ON" else "OFF","coach_toggle",1510f,460f,145f,85f){coach=!coach;session.coachingEnabled=coach;saveSettings();if(!coach)voice?.stop();show(screen)}.contentDescription="주행 코치 ${if(coach)"켜짐" else "꺼짐"} 전환"
+                scene.button("","coach_toggle",58f,650f,184f,93f){coach=!coach;session.coachingEnabled=coach;saveSettings();if(!coach)voice?.stop();show(screen)}.apply {
+                    background=null;elevation=0f;contentDescription="주행 코치 ${if(coach)"켜짐" else "꺼짐"} 전환"
+                }
                 startButton=scene.button("자동 시연 시작","replay_start",75f,945f,285f,65f,true){start()}
                 pauseButton=scene.button("일시정지","replay_pause",380f,945f,160f,65f){session.pause();voice?.stop()}
                 scene.button("연습 선택","lesson_select",45f,330f,260f,80f){chooseLesson()}
@@ -163,11 +166,14 @@ class ChageunActivity: Activity() {
                 scene.button("오른쪽 ON","indicator_right",305f,430f,245f,65f){setIndicator(Indicator.RIGHT)}
                 scene.button("SDK 입력","indicator_live",45f,510f,245f,65f){setIndicator(null)}
                 scene.button("비교 안내 듣기","indicator_preview",305f,510f,245f,65f){previewIndicator()}
-                scene.button("설명 더 보기","coach_help",1320f,1040f,335f,65f){help()}
+                scene.button("설명 더 보기","coach_help",1195f,620f,390f,60f){help()}
+                scene.button("","map_quest_banner",1095f,905f,560f,170f){vehicleQuestView=false;show(AppScreen.QUESTS)}.apply {
+                    background=null;elevation=0f;contentDescription="이번 시연 퀘스트 진행도 보기"
+                }
             }
             AppScreen.QUESTS->{
                 scene.button("시연 퀘스트","quests_demo",70f,228f,270f,52f,!vehicleQuestView){vehicleQuestView=false;show(AppScreen.QUESTS)}
-                scene.button("차량 신호 퀘스트","quests_vehicle",355f,228f,350f,52f,vehicleQuestView){vehicleQuestView=true;show(AppScreen.QUESTS)}
+                scene.button("실제 차량 신호","quests_vehicle",355f,228f,350f,52f,vehicleQuestView){vehicleQuestView=true;show(AppScreen.QUESTS)}
                 if(vehicleQuestView) {
                     scene.button(if(vehicleQuests.enabled)"주행 기록 마치기" else "차량 연결 시작","vehicle_finish",1240f,940f,360f,68f,true){
                         if(!vehicleQuests.enabled){vehicleQuests.resume();show(screen)}else {
@@ -178,12 +184,17 @@ class ChageunActivity: Activity() {
                         }
                     }
                 }else {
-                scene.button("★ 퀘스트 계속하기","quest_continue",555f,885f,600f,105f,true){show(if(session.scenario.lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP);if(!session.scenario.started || session.paused)start()}
+                scene.button("★ 퀘스트 계속하기","quest_continue",555f,965f,600f,80f,true){show(if(session.scenario.lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP);if(!session.scenario.started || session.paused)start()}
                 scene.button("초기화","quest_reset",1435f,178f,195f,70f){resetQuests()}
-                val skills=listOf("교차로 통과","출발 전 점검","차선 변경","안전 거리 유지","주차 마무리")
-                skills.forEachIndexed {i,title->
-                    val b=scene.button("", "quest_card_$i",54f+321*i,280f,290f,550f){when(i){0->select(RoadLesson.TURN);2->select(RoadLesson.LANE);4->select(RoadLesson.PARKING);else->toast("실제 센서 연동 후 제공할 퀘스트예요")}}
-                    b.background=null;b.elevation=0f;b.contentDescription="$title 연습 선택"
+                com.hmgchallenge.pleosstarter.quests.ProductQuestCatalog.all.forEachIndexed {i,quest->
+                    val b=scene.button("", "quest_card_$i",65f+(i%3)*540,315f+(i/3)*300,510f,268f){
+                        when(quest.skill) {
+                            com.hmgchallenge.pleosstarter.quests.CoachSkill.PREPARATION->if(session.tripId==null || session.scenario.complete)start()else checklist(quest.skill)
+                            com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH->checklist(quest.skill)
+                            else->select(RoadLesson.valueOf(quest.lesson!!))
+                        }
+                    }
+                    b.background=null;b.elevation=0f;b.contentDescription="${quest.title} · ${session.quest.practiceCount(quest.skill)}회"
                 }
                 }
             }
@@ -215,6 +226,9 @@ class ChageunActivity: Activity() {
                     else memo=DrivingMemoDialog(this,{text,category,difficult->session.memo(text,category,difficult)},{memo=null;show(screen)}).also {it.show("OTHER")}
                 }
                 scene.button("다음 연습","feedback_next",1320f,970f,280f,90f,true){chooseLesson()}
+                if(vehicleFeedbackId()==null && session.completedAt!=null && session.scenario.lesson==RoadLesson.PARKING && (selectedTrip==null || selectedTrip==session.tripId)) {
+                    scene.button("하차 준비 확인","departure_checklist",790f,970f,480f,90f){checklist(com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH)}
+                }
             }
         }
         // These destinations are always available; no separate navy/white application tasks.
@@ -237,10 +251,45 @@ class ChageunActivity: Activity() {
     }
     private fun start() {
         if(emptyPreview){toast("연습 시나리오를 준비 중이에요");return}
+        if(session.tripId==null || session.scenario.complete) {
+            val definition=com.hmgchallenge.pleosstarter.quests.QuestCatalog.get("prepare")
+            val checked=mutableSetOf<Int>()
+            val dialog=AlertDialog.Builder(this).setTitle("시연 전 · 출발 준비 확인")
+                .setMultiChoiceItems(definition.checks.toTypedArray(),BooleanArray(definition.checks.size)){d,i,on->
+                    if(on)checked.add(i)else checked.remove(i)
+                    (d as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE).isEnabled=checked.size==definition.checks.size
+                }.setPositiveButton("확인하고 시연 시작"){_,_->startPrepared(checked)}
+                .setNeutralButton("점검 기록 없이 시연"){_,_->startPrepared()}.setNegativeButton("닫기",null).create()
+            dialog.setOnShowListener {dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled=false};dialog.show()
+            return
+        }
+        startPrepared()
+    }
+    fun startPrepared(checked: Set<Int>?=null) {
+        if(emptyPreview)return
         if(!session.start())toast(session.error ?: "저장 실패")
+        else if(checked!=null && !session.confirmChecklist(com.hmgchallenge.pleosstarter.quests.CoachSkill.PREPARATION,checked))toast(session.error ?: "점검 기록 실패")
         lastTick=SystemClock.elapsedRealtime()
     }
+    private fun checklist(skill: com.hmgchallenge.pleosstarter.quests.CoachSkill) {
+        if(session.tripId==null){toast("시연을 시작한 뒤 확인할 수 있어요");return}
+        if(skill==com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH && (session.completedAt==null || session.scenario.lesson!=RoadLesson.PARKING)) {
+            toast("주차를 마친 뒤 하차 준비를 확인해요");return
+        }
+        val definition=com.hmgchallenge.pleosstarter.quests.QuestCatalog.get(if(skill==com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH)"finish" else "prepare")
+        val checked=mutableSetOf<Int>()
+        val dialog=AlertDialog.Builder(this).setTitle("시연 기록 · ${definition.title}")
+            .setMultiChoiceItems(definition.checks.toTypedArray(),BooleanArray(definition.checks.size)){d,i,on->
+                if(on)checked.add(i)else checked.remove(i)
+                (d as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE).isEnabled=checked.size==definition.checks.size
+            }.setPositiveButton("확인한 내용 기록"){_,_->
+                if(session.confirmChecklist(skill,checked)){show(screen);toast("퀘스트에 반영했어요")}else toast(session.error ?: "확인 조건을 충족하지 않았어요")
+            }.setNegativeButton("닫기",null).create()
+        dialog.setOnShowListener {dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled=false};dialog.show()
+    }
+    fun questDiagnostics()=(canvas as? QuestCanvas)?.diagnostics()
     fun select(lesson: RoadLesson,source: ScenarioSpeed=ScenarioSpeed.REPLAY) {
+        vehicleQuestView=false
         voice?.stop()
         if(!session.select(lesson,source)){toast(session.error ?: "기록 저장 실패");return}
         selectedTrip=null;show(if(lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP)

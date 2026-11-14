@@ -73,6 +73,7 @@ class SharedCoachRepository(val database: TripDatabase) {
                 }
             }
             dao.clearQuests("$profile:%");dao.saveQuests(quests)
+            persistPracticeRows(profile,records)
             root.optJSONObject("session")?.let {session->
                 val id=session.getString("tripId");val prior=dao.trip(id)
                 val ended=session.takeUnless {it.isNull("finishedAt")}?.optLong("finishedAt")
@@ -82,6 +83,20 @@ class SharedCoachRepository(val database: TripDatabase) {
                 }
                 if(ended!=null)buildReport(id,ended)
             }
+    }
+
+    /** Backfills queryable counters from existing evidence without adding completions or rewards. */
+    fun reconcilePracticeQuests(profile: String): Boolean=write("quest:$profile") {
+        require(profile in setOf("demo","personal"))
+        persistPracticeRows(profile,dao.completions(profile))
+    }
+    private fun persistPracticeRows(profile: String,records: List<PracticeCompletion>) {
+        val at=records.maxOfOrNull {it.at} ?: 0L
+        dao.saveQuests(com.hmgchallenge.pleosstarter.quests.CoachSkill.values().map {skill->
+            val progress=com.hmgchallenge.pleosstarter.quests.PracticeProgress(records.count {it.skill==skill.name})
+            Quest("$profile:practice:${skill.name}","practice:${skill.name}",skill.name,
+                "누적 ${progress.completed}회 · Lv.${progress.level}","PRACTICE",30,progress.steps,"ACTIVE",at)
+        })
     }
 
     fun beginTrip(id: String,lesson: String,speedSource: String,at: Long,targetCount: Int=if(lesson=="COMBINED")2 else 1): Boolean=write("trip") {
@@ -149,6 +164,7 @@ class SharedCoachRepository(val database: TripDatabase) {
     fun events(id: String)=io {dao.events(id)}
     fun samples(id: String)=io {dao.samples(id)}
     fun trip(id: String)=io {dao.trip(id)}
+    fun completedSkills(id: String)=io {dao.tripCompletions(id).map {it.skill}.toSet()}
     fun points(profile: String)=io {dao.rewards(profile).sumOf {JSONObject(it.payload).getInt("points")}}
     fun tripPoints(id: String)=io {dao.events(id).filter {it.type=="PRACTICE_REWARD"}.sumOf {JSONObject(it.payload).getInt("points")}}
     /** Reconcile this runtime's unfinished records after process death; never invent a completion. */
@@ -178,7 +194,7 @@ class SharedCoachRepository(val database: TripDatabase) {
         val samples=dao.samples(id);val notes=dao.notes(id);val practice=dao.tripCompletions(id)
         val review=SpeedReview.analyze(samples.map {SpeedReview.Sample(it.t,it.speedKmh?.toDouble())})
         dao.clearSpeedEvents(id,"$id:speed:%");dao.saveSpeedEvents(review.mapIndexed {i,e->TripEvent("$id:speed:$i",id,e.type,e.at,1,e.delta.toFloat())})
-        val good=practice.map {when(it.skill){"LANE_CHANGE"->"한 차로 이동 연습을 마쳤어요";"INTERSECTION"->"우회전 연습을 마쳤어요";"PARKING"->"후진 주차·정렬을 연습했어요";else->"${it.skill} 연습을 기록했어요"}}.toMutableList()
+        val good=practice.groupBy {it.skill}.map {(skill,records)->when(skill){"LANE_CHANGE"->"한 차로 이동 연습 ${records.size}회";"INTERSECTION"->"우회전 연습 완료";"PARKING"->"후진 주차·정렬 연습 완료";"PREPARATION"->"출발 점검 직접 확인";"SPEED"->"교차로 감속 시연 완료 · 차간거리 판정 별도";"FINISH"->"하차 점검 직접 확인";else->"$skill 연습 기록"}}.toMutableList()
         val attempts=dao.events(id).filter {it.type=="VEHICLE_QUEST_ATTEMPT"}.map {
             com.hmgchallenge.pleosstarter.feature.quests.QuestBoardCodec.decodeAttempt(it.payload)
         }

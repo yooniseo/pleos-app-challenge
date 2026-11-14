@@ -49,7 +49,7 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
         text(c,"차근차근, 오늘의 성장",835f,438f,44f,Palette.ink,true)
         text(c,if(vehicleRecord)"신호 조건 충족 $completed / $target" else "이번 연습 +${earned} P",835f,520f,34f,Palette.purple,true)
         val good=report?.goodPoints?.let(::JSONArray)
-        text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(4,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,590f,29f)
+        text(c,if(good==null)"아직 완료한 연습이 없어요" else (0 until minOf(6,good.length())).joinToString("\n") {"✓ "+good.getString(it)},835f,580f,25f)
         val next=report?.practicePoints?.let(::JSONArray)?.optString(0).orEmpty()
         text(c,next.take(35),835f,805f,27f)
         text(c,if(vehicleRecord)"신호 조건 기록이며 실제 차로 이동 검증은 별도예요" else "시연 기록은 실제 운전 실력 평가와 구분해요",835f,865f,24f,Color.rgb(101,106,128))

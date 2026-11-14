@@ -13,8 +13,8 @@ class VehicleQuestCanvas(context: Context,assets: ProductIllustrations,private v
     var input: VehicleQuestInput?=null
     override fun drawScene(c: Canvas) {
         c.drawColor(Color.rgb(197,216,255));assets.hills(c)
-        text(c,"차량 신호 퀘스트",72f,70f,59f,Palette.ink,true)
-        text(c,if(controller.source=="VEHICLE")"Pleos 차량 입력 · 신호 조건을 충족하면 1/30씩 쌓여요" else "TEST · 가상 입력 검증 기록",76f,174f,27f,Palette.ink)
+        text(c,"실제 차량 신호 퀘스트",72f,70f,59f,Palette.ink,true)
+        text(c,if(controller.source=="VEHICLE")"Pleos 입력 전용 · 자동 시연 기록은 왼쪽 ‘시연 퀘스트’에서 확인해요" else "TEST · 가상 입력 검증 기록",76f,174f,27f,Palette.ink)
         QuestCatalog.all.forEachIndexed {i,quest->
             val x=65f+i*825f;val p=controller.board.progressOf(quest.questId)
             box(c,x,330f,760f,340f,Color.WHITE,40f)

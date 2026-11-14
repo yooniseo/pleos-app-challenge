@@ -24,8 +24,10 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
     private var realTime=false
     private var focusedReal=false
     private var vehicleQuests=false
-    override fun onCreate(arguments: Bundle?) {vehicleQuests=arguments?.getString("vehicle_quests")=="true";realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
+    private var questDesign=false
+    override fun onCreate(arguments: Bundle?) {questDesign=arguments?.getString("quest_design")=="true";vehicleQuests=arguments?.getString("vehicle_quests")=="true";realTime=arguments?.getString("real_time")=="true";focusedReal=arguments?.getString("focused_real")=="true";super.onCreate(arguments);start()}
     override fun onStart() {
+        if(questDesign){runQuestDesignValidation();return}
         if(vehicleQuests){runVehicleQuestValidation();return}
         val result=Bundle();var activity: ChageunActivity?=null
         val previous=SharedCoachRepository.testOverride
@@ -133,7 +135,7 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
             var speechBaseline=0
             runOnMainSync {speechBaseline=app.voiceDiagnostics().count {it.api=="TTS" && it.kind=="PLAYBACK_STARTED"}}
             // Real-time playback continues through internal tab switches and stops while paused.
-            runOnMainSync {app.select(RoadLesson.LANE);app.session.manualStyle=BeginnerStyle.STEP_BY_STEP;app.window.decorView.findViewWithTag<Button>("replay_start").performClick()}
+            runOnMainSync {app.select(RoadLesson.LANE);app.session.manualStyle=BeginnerStyle.STEP_BY_STEP;app.startPrepared()}
             val id=app.session.tripId!!
             Thread.sleep(1100)
             var before=0.0
@@ -166,12 +168,12 @@ class ProductSmokeRunner: VehicleQuestSmokeRunner() {
             check(repository.trips().size==5 && repository.points("demo")==1200)
             val reopened=ReplaySessionController(targetContext,NavigationSimulationRoute(listOf(GeoPoint(37.0,127.0),GeoPoint(37.001,127.0))))
             val personal=QuestStore(targetContext,false).load()
-            check(reopened.quest.evidence.size==8)
+            check(reopened.quest.evidence.size==9)
             check(reopened.resetProgress())
             check(repository.points("demo")==0 && reopened.quest.evidence.isEmpty())
             check(repository.trips().size==5 && repository.report(id)!=null && repository.tripPoints(id)==200)
             check(QuestStore(targetContext,false).load()==personal)
-            proof.put("reopen","PASS: 5 trips, 8 evidence, 1200 points").put("reset","PASS: current 0 points; previous reports/rewards and personal state preserved")
+            proof.put("reopen","PASS: 5 trips, 9 evidence including approach deceleration, 1200 points").put("reset","PASS: current 0 points; previous reports/rewards and personal state preserved")
             // Simulate process loss without calling close(): recovery cannot award a success.
             check(reopened.start())
             val orphanId=reopened.tripId!!

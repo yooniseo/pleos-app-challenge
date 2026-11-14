@@ -13,6 +13,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
     private val store=QuestStore(context,true)
     var quest=store.load(); private set
     init {
+        check(repository.reconcilePracticeQuests("demo")) {repository.lastError ?: "퀘스트 진행도를 복구하지 못했어요"}
         val stale=quest.session?.takeIf {it.finishedAt==null}
         if(stale!=null && repository.snapshot("trip:${stale.tripId}")?.let {org.json.JSONObject(it).optString("status")}=="INTERRUPTED") {
             val at=maxOf(System.currentTimeMillis(),stale.events.lastOrNull()?.at ?: stale.startedAt)
@@ -64,7 +65,7 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
         if(scenario.complete && !select(selectedLesson,selectedSpeed))return false
         if(tripId!=null && scenario.started){paused=false;error=null;return true}
         val id=UUID.randomUUID().toString()
-        if(!repository.beginTrip(id,scenario.lesson.name,scenario.source.name,now,if(selectedLesson==RoadLesson.COMBINED)4 else 1))return fail()
+        if(!repository.beginTrip(id,scenario.lesson.name,scenario.source.name,now,if(selectedLesson==RoadLesson.COMBINED)6 else 1))return fail()
         startedAt=now;link=SimpleScenarioQuests(id,now)
         synchronized(QuestIntegration.lock) {
             val next=link!!.begin(store.load(),now)
@@ -122,6 +123,21 @@ class ReplaySessionController(context: Context, val course: NavigationSimulation
         val saved=repository.addNote(id,if(difficult)"어려웠어요 · ${skill.name}" else "좋았어요 · ${skill.name}",skill.name,skill.name,difficult)
         if(!saved)return fail()
         refresh();return true
+    }
+    /** One explicit checklist confirmation per trip; never inferred from zero speed or a drawn icon. */
+    fun confirmChecklist(skill: CoachSkill,checked: Set<Int>,now: Long=System.currentTimeMillis()): Boolean {
+        val id=tripId ?: return false
+        val definition=QuestCatalog.get(when(skill){CoachSkill.PREPARATION->"prepare";CoachSkill.FINISH->"finish";else->return false})
+        if(checked!=definition.checks.indices.toSet())return false
+        if(skill==CoachSkill.FINISH && (completedAt==null || scenario.lesson!=RoadLesson.PARKING))return false
+        synchronized(QuestIntegration.lock) {
+            val before=store.load()
+            val next=QuestEngine.recordPractice(before.copy(completed=before.completed+definition.id),
+                PracticeEvidence("$id:checklist:${skill.name}",skill,com.hmgchallenge.pleosstarter.quests.EvidenceSource.SIMULATION,now,id))
+            if(!store.save(next))return fail()
+            quest=next
+        }
+        return true
     }
     fun memo(text: String,category: String,difficult: Boolean): Boolean {
         val id=tripId ?: return false

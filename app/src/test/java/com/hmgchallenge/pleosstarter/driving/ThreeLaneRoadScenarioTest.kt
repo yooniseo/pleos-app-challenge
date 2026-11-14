@@ -46,7 +46,8 @@ class ThreeLaneRoadScenarioTest {
         val parking=SimpleRoadScenario(road.course,RoadLesson.PARKING);parking.start()
         repeat(1600){parking.advance(50,null,false);time+=50;state=link.sync(state,parking,time)}
         assertTrue(parking.complete)
-        assertEquals(4,state.evidence.size)
+        assertEquals(1,state.practiceCount(com.hmgchallenge.pleosstarter.quests.CoachSkill.SPEED))
+        assertEquals(5,state.evidence.size)
         assertNotNull(state.session!!.finishedAt)
         assertEquals(state,link.sync(state,parking,time+1))
     }
