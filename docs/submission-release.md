@@ -1,6 +1,6 @@
 # 제출용 release 검증
 
-검증일: 2026-11-15. 제출 버전: 0.3.0 (versionCode 3), 태그: `v0.3.0-submission`.
+검증일: 2026-11-15. 제출 버전: 0.3.0 (versionCode 3), 태그: `v0.3.0-submission-final`.
 
 ## 환경
 
@@ -50,9 +50,10 @@ adb -s emulator-5576 shell am instrument --user 10 -w -r -e mirror parking_modes
 
 ## 배포 APK
 
-- 파일명: `chageun-0.3.0-release.apk`
+- 저장소 경로: `apk/뿌까_차근차근_release.apk`
+- 파일명: `뿌까_차근차근_release.apk`
 - SHA-256: `1d692e35756adbacedea0b65e958622c6f9a47499cef2d79a3170edfd988eb7e`
 - 인증서 SHA-256: `016efb8218da8bc10bda299c8cbdd3439cd0732593f99757c23ad8e0775cc379`
-- [다운로드와 검증 로그](https://github.com/yooniseo/pleos-app-challenge/releases/tag/v0.3.0-submission)
+- [다운로드와 검증 로그](https://github.com/yooniseo/pleos-app-challenge/releases/tag/v0.3.0-submission-final)
 
 이 결과는 Pleos 에뮬레이터의 시연 검증이다. 실제 도로·실차 주차 성공 판정이나 차량 탑재 승인을 의미하지 않는다.
