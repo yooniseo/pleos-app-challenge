@@ -25,6 +25,7 @@ class ChageunActivity: Activity() {
     }
     private var vehicleMovedInGear=false
     private var mirroredFrame: ReplayControls?=null
+    private val cameraCoach by lazy { ParkingCameraCoach(this) }
     private var recommendView=true
     private var recommendationSource="VEHICLE"
     private var recommendationObserver: java.io.Closeable?=null
@@ -94,6 +95,7 @@ class ChageunActivity: Activity() {
     }
     private fun openRequestedScreen(request: android.content.Intent) {
         if(request.getStringExtra("open_screen")=="QUESTS")showRecommendations(recommendationSource)
+        else if(request.getStringExtra("open_screen")=="PARKING")show(AppScreen.PARKING)
         else show(AppScreen.MAP)
     }
     override fun onNewIntent(request: android.content.Intent) {
@@ -102,6 +104,7 @@ class ChageunActivity: Activity() {
     }
     override fun onStart() {
         super.onStart();if(!::session.isInitialized)return
+        handler.removeCallbacks(finishCameraReplay)
         active=true;lastTick=SystemClock.elapsedRealtime();telemetry.start()
         recommendationObserver=repository.observe {key->
             if(key in setOf("note","trip","report","vehicle-quests","quest:demo")) {
@@ -136,12 +139,7 @@ class ChageunActivity: Activity() {
             val replay=s.started && !session.paused && !s.complete && session.usesReplaySpeed
             val frame=if(replay) ReplayControls.from(s,session.indicatorOverride) else null
             session.updateIndicator(frame?.signal ?: telemetry.indicator)
-            // The cluster uses unsigned speed. Only omit the reverse-gear trigger in the authored demo.
-            val consoleFrame=if(frame?.gear=="Reverse")frame.copy(gear="Drive") else frame
-            if(mirrorAvailable && consoleFrame!=mirroredFrame) {
-                mirroredFrame=consoleFrame
-                ReplayConsole.update(consoleFrame)
-            }
+            mirror(frame)
             if(!mirrorAvailable || !ReplayConsole.filtersVehicleInput(telemetry.speedAt)) {
                 val previousTrip=vehicleQuests.tripId
                 vehicleQuests.update(telemetry.questInput(),now)
@@ -205,11 +203,13 @@ class ChageunActivity: Activity() {
                 it.sourceLabel=when(recommendationSource){"REPLAY"->"DEMO · 자동 시연 기록";"SIMULATION"->"TEST · 가상 신호 기록 기준";else->"Pleos 차량 주행 기록 기준"}
             }else QuestCanvas(this,art).also {canvas=it;it.state=session.quest;it.points=points}
             AppScreen.PARKING->{
-                val layers=FrameLayout(this)
-                val s=session.scenario.takeIf {it.lesson==RoadLesson.PARKING} ?: SimpleRoadScenario(session.course,RoadLesson.PARKING)
-                map=ScenarioRoadMapView(this,art).apply {setFrame(s.course,s.frame(),true)}
-                canvas=ParkingCanvas(this,art,session)
-                layers.addView(map,FrameLayout.LayoutParams(-1,-1));layers.addView(canvas,FrameLayout.LayoutParams(-1,-1));layers
+                val parking = session.scenario.takeIf { it.lesson == RoadLesson.PARKING } ?: SimpleRoadScenario(session.course,RoadLesson.PARKING)
+                val layers = FrameLayout(this)
+                map = ScenarioRoadMapView(this,art).apply { setFrame(parking.course, parking.frame(), true) }
+                canvas = ParkingCanvas(this,art,session)
+                layers.addView(map,FrameLayout.LayoutParams(-1,-1))
+                layers.addView(canvas,FrameLayout.LayoutParams(-1,-1))
+                layers
             }
             AppScreen.FEEDBACK->{
                 val layers=FrameLayout(this)
@@ -285,10 +285,10 @@ class ChageunActivity: Activity() {
                 }
             }
             AppScreen.PARKING->{
-                if(session.scenario.lesson!=RoadLesson.PARKING)scene.button("후진 주차 시연 선택","parking_select",1165f,900f,460f,105f,true){select(RoadLesson.PARKING)}
+                if(session.scenario.lesson!=RoadLesson.PARKING)scene.button("후진 주차 시연 선택","parking_select",1315f,55f,330f,76f,true){select(RoadLesson.PARKING)}
                 else {
-                    startButton=scene.button("주차 자동 시연","replay_start",1210f,890f,390f,90f,true){start()}
-                    pauseButton=scene.button("일시정지","replay_pause",1290f,990f,260f,75f){session.pause();voice?.stop()}
+                    startButton=scene.button("주차 자동 시연","replay_start",1195f,55f,245f,76f,true){start()}
+                    pauseButton=scene.button("일시정지","replay_pause",1455f,55f,190f,76f){session.pause();voice?.stop()}
                 }
             }
             AppScreen.FEEDBACK->{
@@ -489,11 +489,44 @@ class ChageunActivity: Activity() {
         val format=java.text.SimpleDateFormat("MM/dd HH:mm",java.util.Locale.KOREA)
         AlertDialog.Builder(this).setTitle("지난 연습 기록").setItems(trips.map {"${format.format(java.util.Date(it.startedAt))} · ${((it.distanceKm ?: 0f)*1000).toInt()}m"}.toTypedArray()){_,i->selectedTrip=trips[i].tripId;show(AppScreen.FEEDBACK)}.setNegativeButton("닫기",null).show()
     }
+    private fun mirror(frame: ReplayControls?) {
+        if (mirrorAvailable && frame?.gear == "Reverse" && session.scenario.lesson == RoadLesson.PARKING && coach) {
+            cameraCoach.update(session.scenario)
+        } else if (mirroredFrame?.gear == "Reverse") {
+            cameraCoach.hide()
+        }
+        if (mirrorAvailable && frame != mirroredFrame) {
+            mirroredFrame = frame
+            ReplayConsole.update(frame)
+        }
+    }
+
+    // Pleos owns the foreground during reverse. Finish only the active emulator parking
+    // manoeuvre so the console returns to Park and the same trip can show its feedback.
+    private val finishCameraReplay = object : Runnable {
+        override fun run() {
+            val now = SystemClock.elapsedRealtime()
+            session.tick(now - lastTick, now, null, false)
+            lastTick = now
+            val parking = session.scenario
+            if (session.paused || parking.complete || parking.parkingGear != "R") {
+                mirror(null)
+                return
+            }
+            mirror(ReplayControls.from(parking, session.indicatorOverride))
+            handler.postDelayed(this, 100)
+        }
+    }
+
     override fun onStop() {
         memo?.dismiss();memo=null
         active=false;handler.removeCallbacks(loop);handler.removeCallbacks(refreshRecommendations);recommendationObserver?.close();recommendationObserver=null
-        if(mirroredFrame!=null){mirroredFrame=null;ReplayConsole.update(null)}
-        if(::session.isInitialized)session.pause()
+        if (!isFinishing && mirroredFrame?.gear == "Reverse" && !session.paused) {
+            handler.post(finishCameraReplay)
+        } else {
+            mirror(null)
+            if (::session.isInitialized) session.pause()
+        }
         if(::vehicleQuests.isInitialized) {
             vehicleMovedInGear=false
             vehicleQuests.suspendInputs()
@@ -504,6 +537,8 @@ class ChageunActivity: Activity() {
         super.onStop()
     }
     override fun onDestroy() {
+        handler.removeCallbacks(finishCameraReplay)
+        if (mirroredFrame?.gear == "Reverse") cameraCoach.hide()
         if(mirroredFrame!=null){mirroredFrame=null;ReplayConsole.update(null)}
         if(::session.isInitialized)session.close()
         super.onDestroy()

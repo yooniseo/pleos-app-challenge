@@ -1,40 +1,104 @@
 package com.hmgchallenge.pleosstarter.ui
 
 import android.content.Context
-import android.graphics.*
-import com.hmgchallenge.pleosstarter.driving.*
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Shader
+import com.hmgchallenge.pleosstarter.driving.BeginnerScenarioCoach
+import com.hmgchallenge.pleosstarter.driving.CoachingStep
+import com.hmgchallenge.pleosstarter.driving.RoadLesson
+import com.hmgchallenge.pleosstarter.driving.ScenarioCoachingCues
+import com.hmgchallenge.pleosstarter.driving.SimpleRoadScenario
 import com.hmgchallenge.pleosstarter.session.ReplaySessionController
 
-class ParkingCanvas(context: Context,assets: ProductIllustrations,private val session: ReplaySessionController): SceneCanvas(context,assets) {
-    private val preview=SimpleRoadScenario(session.course,RoadLesson.PARKING)
-    private val wheel=SteeringWheelRenderer()
+class ParkingCanvas(
+    context: Context,
+    assets: ProductIllustrations,
+    private val session: ReplaySessionController
+) : SceneCanvas(context, assets) {
+    private val preview = SimpleRoadScenario(session.course, RoadLesson.PARKING)
+    private val wheel = SteeringWheelRenderer()
+    private val fade = LinearGradient(0f, 661f, 0f, 1184f, Color.TRANSPARENT, Color.BLACK, Shader.TileMode.CLAMP)
+    private val panel = Color.argb(230, 20, 25, 31)
+    private val muted = Color.rgb(174, 186, 203)
+    private val gears = listOf("R", "N", "D", "P")
+    private val steps = listOf("주차 공간 확인", "핸들 조향", "천천히 후진", "핸들 정렬")
+    private val hints = listOf(
+        "주차칸 옆에 멈추고\n뒤쪽과 양옆을 살펴요",
+        "핸들 그림을 보며\n후진 방향을 맞춰요",
+        "뒤쪽과 양옆을 보며\n천천히 후진해요",
+        "차가 주차선과\n나란한지 확인해요"
+    )
+
     override fun drawScene(c: Canvas) {
-        val s=session.scenario.takeIf {it.lesson==RoadLesson.PARKING} ?: preview
-        val step=when {s.complete->4;s.distance<5->1;s.parkingWaitMs<5000->2;s.distance<s.endDistance-3->3;else->4}
-        paint.shader=LinearGradient(0f,660f,0f,1184f,Color.TRANSPARENT,Color.BLACK,Shader.TileMode.CLAMP)
-        c.drawRect(0f,660f,1700f,1184f,paint);paint.shader=null
-        // Keep the functional coaching wheel in full view, rather than clipping a static ring.
-        wheel.draw(c,850f,865f,360f,s.steeringTarget,true)
-        box(c,55f,156f,330f,698f,Color.argb(240,20,25,31),28f)
-        text(c,"주차 진행 단계  $step / 4",87f,173f,27f,Color.WHITE,true)
-        val ys=listOf(248f,334f,575f,660f)
-        listOf("① 공간 확인","② 핸들 조향","③ 천천히 후진","④ 정렬 완료").forEachIndexed {i,title->
-            box(c,83f,ys[i],245f,59f,if(i+1==step)Palette.lime else if(i+1<step)Color.rgb(84,115,104) else Color.rgb(52,63,77),28f)
-            text(c,title,97f,ys[i]+12,25f,if(i+1==step)Color.rgb(28,40,20) else Color.WHITE,i+1==step)
+        val s = session.scenario.takeIf { it.lesson == RoadLesson.PARKING } ?: preview
+        val cue = ScenarioCoachingCues.at(s)
+        val step = when (cue.step) {
+            CoachingStep.PARK_REVERSE -> 2
+            CoachingStep.PARK_COUNTERSTEER -> 3
+            CoachingStep.PARK_ALIGN, CoachingStep.COMPLETE -> 4
+            else -> 1
         }
-        text(c,"STEP 0$step",97f,407f,26f,Palette.lime,true)
-        text(c,listOf("주차칸 옆에\n천천히 맞춰요","멈춘 뒤 뒤쪽과\n양옆을 확인해요","차량 후면을\n주차선과 나란하게","핸들을 풀고\n정렬을 마무리해요")[step-1],97f,450f,25f,Color.WHITE,true)
-        box(c,1210f,40f,355f,84f,Color.argb(242,20,25,31),42f)
-        if(session.selectedLesson==RoadLesson.COMBINED)text(c,"Quest 3/3 · 주차 마무리",65f,73f,27f,Color.WHITE,true)
-        text(c,"후진 주차  STEP 0$step",1240f,60f,29f,Palette.lime,true)
-        text(c,"가이드에 맞춰 천천히 움직여 주세요",490f,73f,28f,Color.WHITE)
-        box(c,1210f,365f,435f,360f,Color.argb(235,20,25,31),24f)
-        wrappedText(c,ScenarioCoachingCues.at(s).full,1240f,405f,370f,31f,Color.WHITE,true)
-        text(c,BeginnerScenarioCoach.steeringPosition(s.steeringTarget),1240f,580f,23f,Color.WHITE,true)
-        text(c,"시연용 핸들 · 실제 조향량 아님",1240f,650f,21f,Color.rgb(174,186,203))
-        box(c,577f,1018f,546f,60f,Color.argb(220,20,25,31),24f)
-        listOf("R","N","D").forEachIndexed {i,gear->text(c,gear,673f+145*i,1024f,34f,if(s.parkingGear==gear)Palette.lime else Color.rgb(174,186,203),true)}
-        if(s.parkingGear=="P")text(c,"P",1135f,1024f,34f,Palette.lime,true)
-        text(c,"DEMO · 가상 주차 연습",60f,1045f,22f,Color.WHITE)
+        paint.color = Color.WHITE
+        paint.shader = fade
+        c.drawRect(0f, 661f, 1700f, 1184f, paint)
+        paint.shader = null
+        wheel.draw(c, 850f, 729f, 340f, s.steeringTarget, dark = true)
+
+        centered(c, "가이드에 맞춰 천천히 움직여 주세요", 850f, 72f, 28f, Color.WHITE)
+        for (x in listOf(613f, 1078f)) {
+            assets.figma?.draw(c, "parking_dot", RectF(x, 89f, x + 9f, 98f))
+        }
+        drawSteps(c, step)
+        box(c, 446f, 879f, 808f, 156f, Color.argb(215, 15, 18, 23), 24f)
+        val action = if (cue.step == CoachingStep.READY) "후진 주차를 연습해요" else cue.action
+        centered(c, action, 850f, 899f, 46f, Color.WHITE, bold = true, maxWidth = 750f)
+        centered(c, BeginnerScenarioCoach.steeringPosition(s.steeringTarget), 850f, 972f, 29f, muted)
+        box(c, 511f, 1044f, 697f, 58f, panel, 24f)
+        gears.forEachIndexed { index, gear ->
+            val color = when {
+                gear != s.parkingGear -> muted
+                gear == "R" -> Color.rgb(255, 96, 78)
+                else -> Palette.lime
+            }
+            centered(c, gear, 687f + index * 115f, 1046f, 40f, color, bold = true)
+        }
+        text(c, "DEMO · 가상 주차 연습", 58f, 1048f, 23f, Color.WHITE)
+    }
+
+    private fun drawSteps(c: Canvas, current: Int) {
+        box(c, 56f, 147f, 299f, 635f, panel, 28f)
+        text(c, "주차 도움 가이드", 87f, 179f, 29f, Color.WHITE, true)
+        var y = 249f
+        steps.forEachIndexed { index, label ->
+            val active = index + 1 == current
+            val color = if (active) Color.BLACK else muted
+            box(c, 83f, y, if (index == 1) 191f else 243f, 59f,
+                if (active) Palette.lime else Color.rgb(52, 63, 77), 28f)
+            val badge = if (active) "parking_step_active" else "parking_step_idle"
+            assets.figma?.draw(c, badge, RectF(113f, y + 12f, 148f, y + 47f))
+            centered(c, (index + 1).toString(), 130.5f, y + 14f, 22f, color, active)
+            text(c, label, 162f, y + 13f, 22f, color, active)
+            if (active) {
+                text(c, "STEP. ${index + 1}", 97f, y + 73f, 26f, Palette.lime, true)
+                text(c, hints[index], 97f, y + 117f, 24f, Color.WHITE, true)
+                y += 190f
+            }
+            y += 82f
+        }
+    }
+
+    private fun centered(c: Canvas, label: String, x: Float, y: Float, size: Float, color: Int,
+                         bold: Boolean = false, maxWidth: Float = Float.MAX_VALUE) {
+        paint.textAlign = Paint.Align.CENTER
+        paint.textSize = size
+        paint.typeface = resources.getFont(if (bold) com.hmgchallenge.pleosstarter.R.font.asta_sans_bold
+                                          else com.hmgchallenge.pleosstarter.R.font.asta_sans_medium)
+        val fitted = size * minOf(1f, maxWidth / paint.measureText(label))
+        text(c, label, x, y, fitted, color, bold)
+        paint.textAlign = Paint.Align.LEFT
     }
 }

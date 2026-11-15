@@ -280,6 +280,27 @@
       "width": 312,
       "height": 312,
       "bytes": 4969
+    },
+    {
+      "file": "parking_dot.png",
+      "nodeId": "195:18895",
+      "width": 9,
+      "height": 9,
+      "bytes": 200
+    },
+    {
+      "file": "parking_step_idle.png",
+      "nodeId": "195:18879",
+      "width": 35,
+      "height": 35,
+      "bytes": 610
+    },
+    {
+      "file": "parking_step_active.png",
+      "nodeId": "195:18892",
+      "width": 35,
+      "height": 35,
+      "bytes": 573
     }
   ],
   "export": "Figma Plugin API PNG, contentsOnly=true, useAbsoluteBounds=true; original file unchanged"

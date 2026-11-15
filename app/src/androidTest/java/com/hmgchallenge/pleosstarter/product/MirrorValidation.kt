@@ -11,6 +11,8 @@ import com.hmgchallenge.pleosstarter.app.ChageunActivity
 import com.hmgchallenge.pleosstarter.core.data.SharedCoachRepository
 import com.hmgchallenge.pleosstarter.core.data.TripDatabase
 import com.hmgchallenge.pleosstarter.driving.RoadLesson
+import com.hmgchallenge.pleosstarter.driving.VehicleCoachSource
+import com.hmgchallenge.pleosstarter.session.VehicleTelemetry
 
 /** The app publishes the authored lane replay; independent SDK readback must follow on the map. */
 fun Instrumentation.runMirrorValidation(combined: Boolean) {
@@ -20,6 +22,9 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
     val previous = SharedCoachRepository.testOverride
     SharedCoachRepository.testOverride = repository
     var app: ChageunActivity? = null
+    var observedGear: String? = null
+    val gearProbe = VehicleCoachSource(targetContext, { observedGear = it.gear }, {})
+    val speedProbe = VehicleTelemetry(targetContext)
     val result = Bundle()
     var code = Activity.RESULT_CANCELED
     try {
@@ -27,6 +32,7 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
             .putExtra("verify_console",true)
         val activity = startActivitySync(launch) as ChageunActivity
         app = activity
+        if (combined) runOnMainSync { gearProbe.start(); speedProbe.startSpeed() }
         runOnMainSync { activity.select(if(combined) RoadLesson.COMBINED else RoadLesson.LANE); activity.startPrepared(setOf(0,1,2,3)) }
         var moving=false
         var right=false
@@ -39,6 +45,7 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
         var rearCameraVisible=false
         val until = SystemClock.elapsedRealtime()+if(combined)240_000 else 95_000
         while(SystemClock.elapsedRealtime()<until && !(ended && stopped)) {
+            var reversing = false
             runOnMainSync {
                 val state = activity.liveDrivingDiagnostics()
                 moving = moving || (state.getValue("speedMps").toDoubleOrNull() ?: 0.0)>1.0
@@ -51,12 +58,16 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
                     if(road.completedLaneChanges==1 && state["sdkIndicator"]=="RIGHT")secondLaneRight=true
                 }
                 if(road.lesson==RoadLesson.PARKING && road.parkingGear=="R" && road.speedMps>.4) {
-                    val speed=state["speedMps"]?.toDoubleOrNull()
-                    reverseSpeedMatched=reverseSpeedMatched || (speed!=null && kotlin.math.abs(speed-road.speedMps)<.12 && state["gear"]=="D")
-                    rearCameraVisible=rearCameraVisible || !activity.hasWindowFocus() || state["gear"]=="R"
+                    reversing = true
+                    val speed = speedProbe.speedMps
+                    reverseSpeedMatched = reverseSpeedMatched || (speedProbe.fresh && speed != null &&
+                        kotlin.math.abs(kotlin.math.abs(speed) - road.speedMps) < .12 && observedGear == "R")
                 }
                 ended = activity.session.completedAt!=null
                 stopped = ended && state["motion"]=="STOPPED" && state["sdkIndicator"]=="OFF" && state["gear"]=="P"
+            }
+            if (reversing && !rearCameraVisible) {
+                rearCameraVisible = uiAutomation.rootInActiveWindow?.packageName?.toString() == "ai.umos.car.evs"
             }
             Thread.sleep(250)
         }
@@ -66,7 +77,7 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
                 approachSpeeds.first()>39 && approachSpeeds.last()<31) {"Unexpected SDK approach speeds: $approachSpeeds"}
         }
         check(!combined || firstLaneOff && secondLaneRight) {"SDK lane signals first OFF=$firstLaneOff second RIGHT=$secondLaneRight"}
-        check(!combined || reverseSpeedMatched && !rearCameraVisible) {"Reverse demo speed mismatch or parking coach covered by rear camera"}
+        check(!combined || reverseSpeedMatched && rearCameraVisible) {"SDK reverse speed/gear matched=$reverseSpeedMatched; system rear camera visible=$rearCameraVisible"}
         check(repository.trips().none {it.source=="VEHICLE"}) {"Mirrored replay leaked into personal driving records"}
         if(combined) {
             val scores=repository.scores(activity.session.tripId!!)!!
@@ -94,6 +105,7 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
     } catch(e: Throwable) {
         result.putString("error",e.stackTraceToString())
     } finally {
+        if (combined) runOnMainSync { gearProbe.stop(); speedProbe.stop() }
         app?.let { runOnMainSync {it.finish()}; waitForIdleSync() }
         SharedCoachRepository.testOverride=previous
         repository.close()

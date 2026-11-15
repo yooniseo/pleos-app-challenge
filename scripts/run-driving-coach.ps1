@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Demo','Live','Verify','Actions','Quests','Cockpit')][string]$Mode='Demo',
+    [ValidateSet('Demo','Live','Verify','Actions','Quests','Cockpit','Parking')][string]$Mode='Demo',
     [string]$Avd='Pleos_Home_2_1',
     [int]$Port=5574,
     [switch]$Build
@@ -44,6 +44,10 @@ $userId=((& $adb -s $serial shell am get-current-user) -join '').Trim()
 & $adb -s $serial install -r --user $userId $apk
 if($LASTEXITCODE) {throw 'APK installation failed. Do not uninstall existing data to bypass a signature mismatch.'}
 & $adb -s $serial shell pm grant --user $userId $app android.car.permission.CAR_SPEED
+if ($Mode -eq 'Parking') {
+    & $adb -s $serial shell appops set --user $userId $app SYSTEM_ALERT_WINDOW allow
+    if ($LASTEXITCODE) {throw 'Could not enable the parking coach overlay on the demo emulator.'}
+}
 & $adb -s $serial forward tcp:8088 tcp:8088
 if($Mode -in @('Verify','Actions')) {
     & $adb -s $serial install -r --user $userId $testApk
@@ -55,7 +59,7 @@ if($Mode -in @('Verify','Actions')) {
     $result | Tee-Object -FilePath (Join-Path $output "$Mode-result.txt")
     if(!(($result -join "`n") -match 'result=PASS_')) {throw "Verification incomplete; inspect $output"}
 } else {
-    $target=if($Mode -eq 'Quests') {'QUESTS'} else {'MAP'}
+    $target=if($Mode -eq 'Quests') {'QUESTS'} elseif ($Mode -eq 'Parking') {'PARKING'} else {'MAP'}
     & $adb -s $serial shell am start --user $userId -W -n "$app/.app.ChageunActivity" --es open_screen $target
     if($LASTEXITCODE) {throw 'Could not open Chageun'}
 }

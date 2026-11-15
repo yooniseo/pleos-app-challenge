@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <application android:networkSecurityConfig="@xml/replay_network_security">
         <!-- Emulator replay; debug entry rejects physical Automotive devices. -->
         <activity android:name=".app.ChageunActivity">
