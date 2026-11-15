@@ -25,7 +25,8 @@ class ChageunActivity: Activity() {
     }
     private var vehicleMovedInGear=false
     private var mirroredFrame: ReplayControls?=null
-    private val cameraCoach by lazy { ParkingCameraCoach(this) }
+    private var parkingCameraEnabled = true
+    private val cameraCoach by lazy { ParkingCameraCoach(this, art) { setParkingCamera(false) } }
     private var recommendView=true
     private var recommendationSource="VEHICLE"
     private var recommendationObserver: java.io.Closeable?=null
@@ -76,6 +77,7 @@ class ChageunActivity: Activity() {
         vehicleQuests=VehicleQuestController(this).also {controller->controller.onCue={pendingVehicleSpeech=it}}
         val settings=JSONObject(repository.snapshot("settings:product") ?: "{}")
         coach=settings.optBoolean("coach",true);voiceEnabled=settings.optBoolean("voice",true);celebrationEnabled=settings.optBoolean("celebration",true)
+        parkingCameraEnabled = settings.optBoolean("parkingCamera", true)
         mapTilted=settings.optBoolean("mapTilted",true);compactQuestBanner=settings.optBoolean("compactQuestBanner",false)
         session.coachingEnabled=coach
         session.manualStyle=runCatching {BeginnerStyle.valueOf(settings.optString("style","ADAPTIVE"))}.getOrDefault(BeginnerStyle.ADAPTIVE)
@@ -206,7 +208,7 @@ class ChageunActivity: Activity() {
                 val parking = session.scenario.takeIf { it.lesson == RoadLesson.PARKING } ?: SimpleRoadScenario(session.course,RoadLesson.PARKING)
                 val layers = FrameLayout(this)
                 map = ScenarioRoadMapView(this,art).apply { setFrame(parking.course, parking.frame(), true) }
-                canvas = ParkingCanvas(this,art,session)
+                canvas = ParkingCanvas(this,art,session,parkingCameraEnabled)
                 layers.addView(map,FrameLayout.LayoutParams(-1,-1))
                 layers.addView(canvas,FrameLayout.LayoutParams(-1,-1))
                 layers
@@ -263,7 +265,6 @@ class ChageunActivity: Activity() {
                 scene.button("맞춤 퀘스트","quests_recommend",70f,231f,292f,59f,recommendView){showRecommendations(recommendationSource)}
                 scene.button("종합 기록","quests_demo",402f,231f,292f,59f,!recommendView){showQuestProgress()}
                 if(recommendView) {
-                    scene.button("${when(recommendationSource){"REPLAY"->"시연 기록";"SIMULATION"->"가상 신호 TEST";else->"차량 주행"}}","recommend_source",734f,231f,292f,59f){chooseRecommendationSource()}
                     val recommendations=(canvas as RecommendationCanvas).result?.recommendations.orEmpty()
                     recommendations.forEachIndexed {i,q->
                         scene.button("","recommend_card_$i",667f,RecommendationCanvas.cardTop(i,recommendations.size),963f,RecommendationCanvas.cardHeight(recommendations.size)){recommendationDetails(q)}.apply {
@@ -285,6 +286,10 @@ class ChageunActivity: Activity() {
                 }
             }
             AppScreen.PARKING->{
+                scene.button("백미러 화면 ${if (parkingCameraEnabled) "ON" else "OFF"}",
+                    "parking_camera",56f,48f,340f,78f,parkingCameraEnabled) {
+                    setParkingCamera(!parkingCameraEnabled)
+                }
                 if(session.scenario.lesson!=RoadLesson.PARKING)scene.button("후진 주차 시연 선택","parking_select",1315f,55f,330f,76f,true){select(RoadLesson.PARKING)}
                 else {
                     startButton=scene.button("주차 자동 시연","replay_start",1195f,55f,245f,76f,true){start()}
@@ -351,11 +356,6 @@ class ChageunActivity: Activity() {
         recommendationSource=source;recommendView=true;show(AppScreen.QUESTS)
     }
     fun recommendationDiagnostics()=(canvas as? RecommendationCanvas)?.result
-    private fun chooseRecommendationSource() {
-        AlertDialog.Builder(this).setTitle("맞춤 퀘스트 기준")
-            .setItems(arrayOf("Pleos 차량 주행 기록","자동 시연 · 최근 연습 점수")){_,i->showRecommendations(if(i==0)"VEHICLE" else "REPLAY")}
-            .setNegativeButton("닫기",null).show()
-    }
     private fun recommendationDetails(q: com.hmgchallenge.pleosstarter.analysis.Recommendation) {
         val lesson=when(q.weakness) {
             "TURN_SIGNAL"->RoadLesson.LANE
@@ -477,7 +477,7 @@ class ChageunActivity: Activity() {
                 6->toggleQuestBannerStyle()
             }}.setNegativeButton("닫기",null).show()
     }
-    private fun saveSettings(){if(!repository.saveSnapshot("settings:product",JSONObject().put("coach",coach).put("voice",voiceEnabled).put("celebration",celebrationEnabled).put("style",session.manualStyle.name).put("mapTilted",mapTilted).put("compactQuestBanner",compactQuestBanner).toString()))toast("설정을 저장하지 못했어요")}
+    private fun saveSettings(){if(!repository.saveSnapshot("settings:product",JSONObject().put("coach",coach).put("voice",voiceEnabled).put("celebration",celebrationEnabled).put("style",session.manualStyle.name).put("mapTilted",mapTilted).put("compactQuestBanner",compactQuestBanner).put("parkingCamera",parkingCameraEnabled).toString()))toast("설정을 저장하지 못했어요")}
     private fun resetQuests() {
         if(session.scenario.started && !session.scenario.complete){toast("진행 중인 연습을 먼저 마쳐 주세요");return}
         AlertDialog.Builder(this).setTitle("시연 퀘스트를 처음부터?").setMessage("종합 시연 진행도와 포인트, 맞춤 퀘스트의 최근 평균·추천 진행도를 초기화해요. 지난 주행 리포트는 보관해요.")
@@ -489,7 +489,16 @@ class ChageunActivity: Activity() {
         val format=java.text.SimpleDateFormat("MM/dd HH:mm",java.util.Locale.KOREA)
         AlertDialog.Builder(this).setTitle("지난 연습 기록").setItems(trips.map {"${format.format(java.util.Date(it.startedAt))} · ${((it.distanceKm ?: 0f)*1000).toInt()}m"}.toTypedArray()){_,i->selectedTrip=trips[i].tripId;show(AppScreen.FEEDBACK)}.setNegativeButton("닫기",null).show()
     }
-    private fun mirror(frame: ReplayControls?) {
+    private fun setParkingCamera(enabled: Boolean) {
+        parkingCameraEnabled = enabled
+        saveSettings()
+        if (!enabled && session.scenario.lesson == RoadLesson.PARKING) mirror(null)
+        show(AppScreen.PARKING)
+    }
+
+    private fun mirror(replay: ReplayControls?) {
+        // The diagram-only parking replay never drives the emulator gear selector.
+        val frame = replay.takeUnless { !parkingCameraEnabled && session.scenario.lesson == RoadLesson.PARKING }
         if (mirrorAvailable && frame?.gear == "Reverse" && session.scenario.lesson == RoadLesson.PARKING && coach) {
             cameraCoach.update(session.scenario)
         } else if (mirroredFrame?.gear == "Reverse") {

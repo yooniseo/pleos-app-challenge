@@ -17,37 +17,24 @@ import com.hmgchallenge.pleosstarter.session.ReplaySessionController
 class ParkingCanvas(
     context: Context,
     assets: ProductIllustrations,
-    private val session: ReplaySessionController
-) : SceneCanvas(context, assets) {
+    private val session: ReplaySessionController,
+    private val cameraEnabled: Boolean
+) : ParkingStepsCanvas(context, assets) {
     private val preview = SimpleRoadScenario(session.course, RoadLesson.PARKING)
     private val wheel = SteeringWheelRenderer()
     private val fade = LinearGradient(0f, 661f, 0f, 1184f, Color.TRANSPARENT, Color.BLACK, Shader.TileMode.CLAMP)
-    private val panel = Color.argb(230, 20, 25, 31)
-    private val muted = Color.rgb(174, 186, 203)
     private val gears = listOf("R", "N", "D", "P")
-    private val steps = listOf("주차 공간 확인", "핸들 조향", "천천히 후진", "핸들 정렬")
-    private val hints = listOf(
-        "주차칸 옆에 멈추고\n뒤쪽과 양옆을 살펴요",
-        "핸들 그림을 보며\n후진 방향을 맞춰요",
-        "뒤쪽과 양옆을 보며\n천천히 후진해요",
-        "차가 주차선과\n나란한지 확인해요"
-    )
-
     override fun drawScene(c: Canvas) {
         val s = session.scenario.takeIf { it.lesson == RoadLesson.PARKING } ?: preview
         val cue = ScenarioCoachingCues.at(s)
-        val step = when (cue.step) {
-            CoachingStep.PARK_REVERSE -> 2
-            CoachingStep.PARK_COUNTERSTEER -> 3
-            CoachingStep.PARK_ALIGN, CoachingStep.COMPLETE -> 4
-            else -> 1
-        }
+        val step = parkingGuideStep(cue.step)
         paint.color = Color.WHITE
         paint.shader = fade
         c.drawRect(0f, 661f, 1700f, 1184f, paint)
         paint.shader = null
         wheel.draw(c, 850f, 729f, 340f, s.steeringTarget, dark = true)
 
+        box(c, 592f, 58f, 516f, 68f, panel, 30f)
         centered(c, "가이드에 맞춰 천천히 움직여 주세요", 850f, 72f, 28f, Color.WHITE)
         for (x in listOf(613f, 1078f)) {
             assets.figma?.draw(c, "parking_dot", RectF(x, 89f, x + 9f, 98f))
@@ -66,10 +53,23 @@ class ParkingCanvas(
             }
             centered(c, gear, 687f + index * 115f, 1046f, 40f, color, bold = true)
         }
-        text(c, "DEMO · 가상 주차 연습", 58f, 1048f, 23f, Color.WHITE)
+        text(c, if (cameraEnabled) "후진 시 후방 영상으로 전환" else "가상 주차 · 앱 안에서만 기어 전환", 58f, 1048f, 23f, Color.WHITE)
     }
+}
 
-    private fun drawSteps(c: Canvas, current: Int) {
+abstract class ParkingStepsCanvas(context: Context, assets: ProductIllustrations) : SceneCanvas(context, assets) {
+    protected val panel = Color.argb(230, 20, 25, 31)
+    protected val muted = Color.rgb(174, 186, 203)
+
+    private val steps = listOf("주차 공간 확인", "핸들 조향", "천천히 후진", "핸들 정렬")
+    private val hints = listOf(
+        "주차칸 옆에 멈추고\n뒤쪽과 양옆을 살펴요",
+        "핸들 그림을 보며\n후진 방향을 맞춰요",
+        "뒤쪽과 양옆을 보며\n천천히 후진해요",
+        "차가 주차선과\n나란한지 확인해요"
+    )
+
+    protected fun drawSteps(c: Canvas, current: Int) {
         box(c, 56f, 147f, 299f, 635f, panel, 28f)
         text(c, "주차 도움 가이드", 87f, 179f, 29f, Color.WHITE, true)
         var y = 249f
@@ -91,7 +91,7 @@ class ParkingCanvas(
         }
     }
 
-    private fun centered(c: Canvas, label: String, x: Float, y: Float, size: Float, color: Int,
+    protected fun centered(c: Canvas, label: String, x: Float, y: Float, size: Float, color: Int,
                          bold: Boolean = false, maxWidth: Float = Float.MAX_VALUE) {
         paint.textAlign = Paint.Align.CENTER
         paint.textSize = size
@@ -101,4 +101,11 @@ class ParkingCanvas(
         text(c, label, x, y, fitted, color, bold)
         paint.textAlign = Paint.Align.LEFT
     }
+}
+
+internal fun parkingGuideStep(cue: CoachingStep) = when (cue) {
+    CoachingStep.PARK_REVERSE -> 2
+    CoachingStep.PARK_COUNTERSTEER -> 3
+    CoachingStep.PARK_ALIGN, CoachingStep.COMPLETE -> 4
+    else -> 1
 }
