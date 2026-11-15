@@ -22,7 +22,7 @@ Android Studio에서 JDK 17과 Android SDK 34를 설정하고, Pleos 에뮬레�
 | --- | --- | --- |
 | 김서연 · [@yooniseo](https://github.com/yooniseo) | 주행·주차 코치 화면, 시연 흐름, 기능 통합 | [코치 화면과 공통 시연 세션](https://github.com/yooniseo/pleos-app-challenge/commit/2fe16a7706217fe09f9c21f39d1837adfa9b328d) |
 | 신가인 · [@ssggiisgi](https://github.com/ssggiisgi) | 차량 속도·음성 인식 실험, Room 데이터 모델, 주행 분석과 맞춤 퀘스트 추천 | [주행 점수와 맞춤 퀘스트](https://github.com/yooniseo/pleos-app-challenge/commit/a6897f099086b2dc144aa89d84c40488e9429860) |
-| 박서연 · [@SeoyeonPark-skku](https://github.com/SeoyeonPark-skku) | 퀘스트 보드, 차량 신호를 이용한 주행 동작 감지, 퀘스트 화면 원형 | [퀘스트 브랜치의 원본 구현](https://github.com/yooniseo/pleos-app-challenge/commit/fba21000320126e698b300abe25863944ed27455) |
+| 박서연 · [@SYParkky](https://github.com/SYParkky) | 퀘스트 보드, 차량 신호를 이용한 주행 동작 감지, 퀘스트 화면 원형 | [퀘스트 브랜치의 원본 구현](https://github.com/yooniseo/pleos-app-challenge/commit/fba21000320126e698b300abe25863944ed27455) |
 
 ## 빌드와 검사
 
