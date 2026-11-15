@@ -63,7 +63,7 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
         val remaining=course.turnDistance-atMetres
         return when {
             remaining<=-80 -> 20.0
-            remaining<=0 -> 10.0
+            remaining<=0 -> 18.0
             else -> APPROACH_KMH+10.0*((remaining-15.0)/45.0).coerceIn(0.0,1.0)
         }
     }

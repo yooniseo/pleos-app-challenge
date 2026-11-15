@@ -264,6 +264,20 @@ class SharedCoachRepository(val database: TripDatabase) {
         val trip=dao.trip(id);val report=dao.report(id)
         if(trip==null || report==null)null else parseScores(trip,report.skillScores)
     }
+    fun replaySignalCount(): Int = io {
+        dao.replayPracticeEvents().count { payload ->
+            val event = JSONObject(payload)
+            event.optString("detail") == "RIGHT" && event.optJSONObject("context")?.optString("kind") == "LANE_RIGHT"
+        }
+    }
+
+    fun replayMission(q: Recommendation): Recommendation {
+        if (q.weakness != "TURN_SIGNAL") return q
+        val count = replaySignalCount()
+        val step = if (count == 0) 0 else (count - 1) % 3 + 1
+        return q.copy(progress = step, target = 3, lifetimeCount = count)
+    }
+
     private fun computeRecommendations(source: String): RecommendationResult {
         val trips=dao.recentTripsBySource(source,100).filterNot {
             source=="VEHICLE" && dao.snapshot("trip:${it.tripId}")?.value?.let(::JSONObject)?.optBoolean("scenario")==true
@@ -292,7 +306,7 @@ class SharedCoachRepository(val database: TripDatabase) {
             }
             listOfNotNull(replayPractice(last?.optString("lesson"),notes.firstOrNull {it in setOf("LANE_CHANGE","RIGHT_TURN","LEFT_TURN","U_TURN","PARKING","SPEED_CONTROL")}))
         }
-        return result.copy(recommendations=practice)
+        return result.copy(recommendations = practice.map(::replayMission))
     }
 
     private fun replayPractice(lesson: String?,difficulty: String?): Recommendation? {

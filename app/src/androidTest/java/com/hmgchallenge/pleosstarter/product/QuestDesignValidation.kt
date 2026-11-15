@@ -179,6 +179,58 @@ fun Instrumentation.runQuestDesignValidation() {
         capture(app,"10-reset-personalized")
         check(repository.recommendations("REPLAY").let {it.tripCount==0 && it.recommendations.isEmpty() && it.averages.values.all {v->v==null}})
         check(repository.scores(id)?.scores?.get(signalScore)==50)
+        check(repository.replaySignalCount() == 0)
+        // Replay one completed commute, then enter the next commute through its recommendation.
+        fun driveAndCheck(initial: Int) {
+            val start = requireNotNull(app.session.tripId).let { repository.trip(it)!!.startedAt }
+            var firstSeen = false
+            var secondSeen = false
+            onMain {
+                repeat(2400) { i ->
+                    if (app.session.completedAt == null) app.session.tick(100, i*100L+1, null, false, start+i*100L)
+                    val s = app.session.scenario
+                    if (s.lesson == RoadLesson.COMBINED && !firstSeen && s.completedLaneChanges == 1) {
+                        check(repository.replaySignalCount() == initial)
+                        firstSeen = true
+                    }
+                    if (s.lesson == RoadLesson.COMBINED && !secondSeen && s.completedLaneChanges == 2) {
+                        check(repository.replaySignalCount() == initial + 1)
+                        secondSeen = true
+                    }
+                }
+                check(firstSeen && secondSeen && app.session.completedAt != null)
+            }
+        }
+        fun openLaneMission(expected: Int) {
+            onMain {
+                app.showRecommendations("REPLAY")
+                val recommendations = app.recommendationDiagnostics()!!.recommendations
+                val index = recommendations.indexOfFirst { it.weakness == "TURN_SIGNAL" }
+                check(index >= 0 && recommendations[index].progress == expected && recommendations[index].target == 3)
+                app.window.decorView.findViewWithTag<Button>("recommend_card_$index").performClick()
+                check(app.window.decorView.findViewWithTag<Button>("mission_continue") != null)
+            }
+        }
+        onMain { app.select(RoadLesson.COMBINED); app.startPrepared() }
+        driveAndCheck(0)
+        openLaneMission(1)
+        waitForIdleSync(); capture(app,"13-mission-one")
+        onMain { app.window.decorView.findViewWithTag<Button>("mission_continue").performClick() }
+        onMain {
+            val dialog = android.view.inspector.WindowInspector.getGlobalWindowViews()
+                .mapNotNull { it.findViewById<Button>(android.R.id.button3) }.single()
+            dialog.performClick()
+        }
+        waitForIdleSync()
+        onMain {
+            check(app.session.selectedLesson == RoadLesson.COMBINED && app.session.tripId != null)
+        }
+        driveAndCheck(1)
+        onMain { app.showFeedback(requireNotNull(app.session.tripId)) }
+        waitForIdleSync(); capture(app,"14-mission-clear")
+        openLaneMission(2)
+        waitForIdleSync(); capture(app,"15-mission-two")
+        proof.put("mission","1/3 → first lane OFF +0 → second lane RIGHT +1 → parked → 2/3")
         proof.put("reset","Clears recommendation inputs, retains historical 50-point report")
         proof.put("fullDemo","PASS: preparation checklist, two lane changes, turn, approach deceleration, parking, departure checklist; 6 areas / 6 evidence, one trip, 400P")
             .put("noFalseCredit","Departure blocked before parking; duplicate checklist does not increase progress; no headway or physical sensor success inferred")

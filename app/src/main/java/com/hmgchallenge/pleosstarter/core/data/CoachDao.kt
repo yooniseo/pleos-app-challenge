@@ -21,6 +21,11 @@ interface CoachDao {
     @Query("SELECT * FROM CoachingEvent WHERE type='DIFFICULTY' ORDER BY at DESC LIMIT 100") fun difficulties(): List<CoachingEvent>
     @Query("SELECT r.* FROM CoachingEvent r INNER JOIN PracticeCompletion p ON r.id=p.id || ':reward' WHERE p.profile=:profile")
     fun rewards(profile: String): List<CoachingEvent>
+    @Query("""SELECT e.payload FROM CoachingEvent e JOIN Trip t ON t.tripId = e.tripId
+        WHERE t.source = 'REPLAY' AND e.type = 'SCENARIO_PRACTICED'
+        AND NOT EXISTS (SELECT 1 FROM AppSnapshot a WHERE a.key = 'recommendation-archive:' || t.tripId)""")
+    fun replayPracticeEvents(): List<String>
+
     @Upsert fun saveTrip(value: Trip)
     @Query("SELECT * FROM Trip WHERE tripId=:id") fun trip(id: String): Trip?
     @Query("SELECT * FROM Trip ORDER BY startedAt DESC LIMIT :limit") fun recentTrips(limit: Int): List<Trip>

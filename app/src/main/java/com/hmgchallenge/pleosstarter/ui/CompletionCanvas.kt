@@ -59,6 +59,10 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
             text(c,"다음 등급은",414f,382f,24f,Color.WHITE)
             text(c,if(state.levelName=="STARTER") "DRIVER" else "MASTER",414f,431f,30f,yellow,true)
         }
+        scores?.laneSignals?.takeIf { it.isNotEmpty() }?.let { signals ->
+            val count = signals.count { it == "RIGHT" }
+            text(c,"깜빡이 먼저 켜기 · 이번 주행 +${count}회",69f,305f,27f,cream,true)
+        }
         val km = trip.distanceKm
         val seconds = trip.endedAt?.let { ((it - trip.startedAt) / 1000).coerceAtLeast(0) }
         fun row(y: Float, en: String, ko: String, value: String, unit: String) {

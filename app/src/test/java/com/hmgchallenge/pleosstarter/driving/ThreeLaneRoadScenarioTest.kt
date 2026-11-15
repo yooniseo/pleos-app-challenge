@@ -31,12 +31,32 @@ class ThreeLaneRoadScenarioTest {
                 assertTrue("Unexpected left hook at connector: ${s.distance} ${s.steeringTarget}",s.steeringTarget> -12)
             if(s.turning) {
                 turn=true;assertEquals(2,s.completedLaneChanges);assertEquals(3,s.currentLane)
-                if(s.distance in (s.course.turnDistance+20)..(s.course.turnDistance+80))assertEquals(10.0,s.speedMps*3.6,.1)
+                if(s.distance in (s.course.turnDistance+20)..(s.course.turnDistance+80))assertEquals(18.0,s.speedMps*3.6,.1)
             }
         }
         assertEquals(30.0,s.turnEntryKmh!!,.1)
         assertEquals(listOf(1,2,3),lanes)
         assertTrue(cruise && approach && turn && s.complete)
+    }
+    @Test fun turnSpeechAtReplaySpeedIsPreparationSteerAndUnwind() {
+        val demo = SimpleRoadScenario(road(), RoadLesson.TURN)
+        val gate = ScenarioSpeechGate()
+        val spoken = mutableListOf<String>()
+        demo.start()
+        var now = 0L
+        var busyUntil = 0L
+        while (!demo.complete) {
+            demo.advance(100, null, false)
+            demo.indicator = demo.replaySignal()
+            now += 100
+            gate.nextForDrive("turn", demo, now, true, true, now >= busyUntil)?.let {
+                spoken.add(it)
+                busyUntil = now + 2500
+            }
+        }
+        assertEquals(spoken.toString(), 3, spoken.size)
+        assertTrue(spoken.first().contains("횡단보도"))
+        assertEquals(listOf("오른쪽으로 부드럽게 돌려요.", "핸들을 가운데로 풀어요."), spoken.drop(1))
     }
     @Test fun fourCornersStayClearOfTheMedianAndTheReceivingRoadCenterline() {
         val approach=road()

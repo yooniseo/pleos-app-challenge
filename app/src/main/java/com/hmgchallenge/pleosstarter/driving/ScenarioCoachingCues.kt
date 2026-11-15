@@ -58,6 +58,23 @@ class ScenarioSpeechGate(private val minimumGapMs: Long=1000) {
     private var lastAt: Long?=null
     fun nextForDrive(tripId: String?, s: SimpleRoadScenario, now: Long, enabled: Boolean, ready: Boolean, idle: Boolean): String? {
         val cue = ScenarioCoachingCues.at(s)
+        if (cue.step == CoachingStep.TURN_PREPARE && s.course.turnDistance - s.distance > 85) return null
+        if (cue.step == CoachingStep.TURN || cue.step == CoachingStep.TURN_UNWIND) {
+            // Speak the two gross hand movements once. The detailed wheel remains animated.
+            val route = s.course
+            val inbound = route.bearing((route.turnDistance - 5).coerceAtLeast(0.0))
+            val outbound = route.bearing((s.endDistance - 4).coerceAtLeast(route.turnDistance))
+            val heading = route.bearing((s.distance + s.speedMps * .7).coerceAtMost(s.endDistance))
+            fun angle(a: Double, b: Double) = kotlin.math.abs((a - b + 540) % 360 - 180)
+            val turned = angle(heading, inbound)
+            if (turned < 4.0) return null
+            val unwind = turned > 15.0 && angle(heading, outbound) <= 16.0
+            // Once the driver has straightened up, later bends must not trigger the entry instruction.
+            if (!unwind && "right-turn:unwind" in delivered && tripId == trip) return null
+            val spoken = if (unwind) "핸들을 가운데로 풀어요." else "오른쪽으로 부드럽게 돌려요."
+            val id = if (unwind) "right-turn:unwind" else "right-turn:enter"
+            return next(tripId, cue.copy(identity = id, spoken = spoken), now, enabled, ready, idle)
+        }
         if (s.lesson == RoadLesson.PARKING && s.started) {
             val gear = s.parkingGear
             val announcement = when (gear) {

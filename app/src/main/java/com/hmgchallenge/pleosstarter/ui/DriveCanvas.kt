@@ -9,14 +9,13 @@ import kotlin.math.*
 /** Only the application window is rendered here. OEM speed/status/climate remain system owned. */
 class DriveCanvas(context: Context,assets: ProductIllustrations,private val session: ReplaySessionController): SceneCanvas(context,assets) {
     private val wheel=SteeringWheelRenderer()
+    var mission: com.hmgchallenge.pleosstarter.analysis.Recommendation? = null
     var vehicleLine="차량 연결 대기"
     var vehicleDetail=""
     var coachEnabled=true
     var compactQuestBanner=false
     var tilted=true
     var toolsExpanded=false
-    var message=""
-    var messageUntil=0L
     override fun drawScene(c: Canvas) {
         val s=session.scenario
         val parking=s.lesson==RoadLesson.PARKING
@@ -75,7 +74,14 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
             s.laneDone->2
             else->1
         }
-        if(compactQuestBanner) {
+        val activeMission = mission
+        if (activeMission != null) {
+            box(c,1095f,905f,560f,170f,Color.rgb(75,143,248),30f)
+            assets.figma?.draw(c,"quest_flag",RectF(1122f,925f,1252f,1055f))
+            val progress = if (activeMission.target > 0) " · ${activeMission.progress.coerceAtMost(activeMission.target)}/${activeMission.target}" else ""
+            text(c,"맞춤 퀘스트$progress",1280f,924f,27f,Color.WHITE)
+            wrappedText(c,activeMission.title,1280f,968f,340f,32f,Color.WHITE,true)
+        } else if(compactQuestBanner) {
             box(c,1129f,928f,526f,147f,Color.rgb(217,217,217),80f)
             assets.figma?.draw(c,"quest_flag_outline",RectF(1167f,961f,1211f,1024f))
             assets.figma?.draw(c,"quest_chevron_dark",RectF(1615f,980f,1635f,1022f))
@@ -87,9 +93,6 @@ class DriveCanvas(context: Context,assets: ProductIllustrations,private val sess
             assets.figma?.draw(c,"chevron",RectF(1602f,973f,1622f,1008f))
             text(c,"Quest  $stage/$target",1292f,923f,20f,Color.WHITE)
             text(c,if(s.complete)"이번 연습\n잘 마쳤어요" else if(parking)"주차선에\n나란히 정렬하기" else if(s.laneDone || s.lesson==RoadLesson.TURN)"경로따라\n우회전하기" else "${s.nextLaneChange?.to ?: 3}차로로\n차선변경하기",1292f,955f,42f,Color.WHITE,true)
-        }
-        if(android.os.SystemClock.elapsedRealtime()<messageUntil) {
-            box(c,600f,180f,480f,140f,Palette.lime,30f);wrappedText(c,message,625f,200f,430f,28f,Palette.ink,true)
         }
         text(c,"DEMO · 경로·차로·핸들은 시연 값\n© OpenStreetMap contributors · OSRM",635f,1030f,19f,Color.rgb(68,74,95))
         session.error?.let {box(c,400f,500f,900f,135f,Color.rgb(255,231,217));text(c,"저장 실패 · 재개를 눌러 다시 시도해 주세요",430f,535f,31f)}
