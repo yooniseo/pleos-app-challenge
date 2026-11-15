@@ -1,13 +1,21 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("kotlin-kapt")   // Room 코드 생성 (Kotlin 1.9.25에 포함, 별도 버전 지정 불필요)
 }
 
+val releaseSigning = Properties().apply {
+    val propertiesFile = rootProject.file("keystore.properties")
+    if (propertiesFile.exists()) propertiesFile.inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.hmgchallenge.pleosstarter"
     compileSdk = 34
     buildToolsVersion = "34.0.0"
+    testBuildType = providers.gradleProperty("testBuildType").getOrElse("debug")
     useLibrary("android.car", false)
 
     defaultConfig {
@@ -17,6 +25,24 @@ android {
         versionCode = 3
         versionName = "0.3.0"
         testInstrumentationRunner = "com.hmgchallenge.pleosstarter.product.ProductSmokeRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releaseSigning.isNotEmpty()) {
+                storeFile = rootProject.file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            isDebuggable = false
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {

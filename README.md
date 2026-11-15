@@ -2,6 +2,14 @@
 
 차로를 바꿀 때 언제 깜빡이를 켜고, 우회전이나 후진 주차를 할 때 핸들을 얼마나 돌려야 할지 연습하는 차량용 Android 앱입니다. 주행을 마치면 퀘스트 결과와 피드백을 확인할 수 있습니다.
 
+## 제출용 APK
+
+- [차근차근 0.3.0 release APK 다운로드](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0-submission/chageun-0.3.0-release.apk)
+- [GitHub Release · 설치 파일과 검증 결과](https://github.com/yooniseo/pleos-app-challenge/releases/tag/v0.3.0-submission)
+- [제출 버전 소스 코드](https://github.com/yooniseo/pleos-app-challenge/tree/v0.3.0-submission) · [APK SHA-256 확인](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0-submission/SHA256SUMS.txt)
+
+별도 키로 서명한 release APK이며 디버깅은 비활성화되어 있습니다. Pleos 에뮬레이터에서 평가하는 제출 버전입니다.
+
 ## 실행 화면
 
 Pleos 에뮬레이터에서 실행한 앱입니다. 주행·주차 장면과 결과는 시뮬레이션 데이터이며, 화면이 잘 보이도록 앱 영역만 잘랐습니다.
@@ -24,12 +32,48 @@ Pleos 에뮬레이터에서 실행한 앱입니다. 주행·주차 장면과 결
 | **주차 가이드** | **퀘스트 완료** |
 | ![디자인 컨셉: 주차 배경 위 단계별 조작 안내](docs/images/readme/concept-parking.png) | ![디자인 컨셉: 연습 완료와 주행 결과](docs/images/readme/concept-completion.png) |
 
+## 테스트 환경과 설치
+
+| 항목 | 검증 환경 |
+| --- | --- |
+| Pleos Connect | **2.1.0**, 빌드 `RELEASE.release_connect_v2.1.0 test-keys` |
+| 운영체제·CPU | Android 14 / API 34 / x86_64 |
+| Android Emulator | 37.2.13.0 |
+| 화면 규격 | **2560 × 1440px, 160dpi(mdpi), 가로 화면** |
+| 가상 기기 | Pleos Connect 기기 프로필, RAM 4GB, CPU 4코어, GPU host |
+| 개발 환경 | Windows / JDK 17 / Android SDK 34 / Build Tools 34.0.0 |
+| 빌드 도구 | Kotlin 1.9.25 / AGP 8.1.4 / Gradle 8.1.1 |
+| 앱 | `com.hmgchallenge.pleosstarter` / 0.3.0 (versionCode 3) / minSdk 28 |
+
+### APK 설치
+
+1. Pleos Connect 2.1.0 가상 기기를 부팅합니다. 기존 debug 앱과 release 앱은 서명이 다르므로, 개발용 기기의 데이터를 보존하려면 새 AVD를 사용하세요.
+2. 위 release APK를 내려받습니다. Android SDK의 `adb devices`로 에뮬레이터 번호를 확인합니다.
+3. 다운로드 폴더에서 아래 PowerShell 명령을 실행합니다. `$serial`은 실제 기기 번호에 맞게 수정합니다.
+
+```powershell
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+$serial = "emulator-5554"
+$androidUser = (& $adb -s $serial shell am get-current-user).Trim()
+
+& $adb -s $serial install -r --user $androidUser .\chageun-0.3.0-release.apk
+& $adb -s $serial shell pm grant --user $androidUser com.hmgchallenge.pleosstarter android.car.permission.CAR_SPEED
+& $adb -s $serial shell appops set --user $androidUser com.hmgchallenge.pleosstarter SYSTEM_ALERT_WINDOW allow
+& $adb -s $serial shell am start --user $androidUser -W -n com.hmgchallenge.pleosstarter/.app.ChageunActivity
+```
+
+`CAR_SPEED`는 차량 속도 수신, `SYSTEM_ALERT_WINDOW`는 시스템 후방 카메라 위의 주차 안내 카드에 사용합니다. 다른 Pleos 차량·내비게이션·음성 서비스 권한은 앱 매니페스트에 선언되어 있습니다.
+
+기본 자동 시연과 지도에는 계정, 서버 등록, 지도 API 키가 필요하지 않습니다. 지도는 앱에 포함된 OSM/OSRM 데이터를 사용하고 음성 안내는 Pleos의 on-device TTS를 사용합니다. APK를 설치한 뒤 기본 시연에는 외부 인터넷 연결이 필요하지 않습니다.
+
+release에서도 에뮬레이터의 로컬 Virtual Console(`127.0.0.1:8088`)에 시연 신호를 전달합니다. 해당 기능은 Automotive 에뮬레이터 하드웨어에서만 켜지며, 물리 차량에는 콘솔 명령을 보내지 않습니다. **후진 주차 시연에서 백미러 화면을 ON으로 두면 Pleos 예제 후방 영상과 안내 카드를, OFF로 두면 가상 주차장 도식을 확인할 수 있습니다.**
+
 ## 실행
 
-Android Studio에서 JDK 17과 Android SDK 34를 설정하고, Pleos 에뮬레이터에서 `app`을 실행합니다.
+설치한 **차근차근** 앱을 실행합니다. 소스에서 실행하려면 Android Studio에서 JDK 17과 Android SDK 34를 설정합니다.
 
 1. 지도에서 **연습 선택**을 엽니다. 차로 변경＋우회전, 차로 변경, 우회전, 후진 주차 중 하나를 고릅니다.
-2. **자동 시연 시작**을 누릅니다. 페달이나 기어를 조작할 필요는 없습니다. 퀘스트·주차·피드백 탭으로 이동해도 연습은 이어집니다.
+2. **자동 시연 시작**을 누르고 출발 점검을 확인하거나 **점검 기록 없이 시연**을 선택합니다. 페달이나 기어를 조작할 필요는 없습니다. 퀘스트·주차·피드백 탭으로 이동해도 연습은 이어집니다.
 3. 연습이 끝나면 거리, 시간, 완료한 퀘스트를 확인합니다. 저장한 결과는 **지난 기록**에서 다시 볼 수 있습니다.
 
 ## 시연과 차량 기록
@@ -48,11 +92,23 @@ Android Studio에서 JDK 17과 Android SDK 34를 설정하고, Pleos 에뮬레�
 
 ## 빌드와 검사
 
+### 서명된 release 빌드
+
+배포된 APK를 설치하는 경우에는 서명 키가 필요하지 않습니다. 소스에서 release APK를 다시 빌드하려면 본인의 서명 키를 만들고, `keystore.properties.example`을 `keystore.properties`로 복사해 키 경로·별칭·비밀번호를 설정합니다. 키와 실제 비밀번호 파일은 Git에서 제외되어 있습니다.
+
+```powershell
+.\gradlew.bat :app:assembleRelease :app:testReleaseUnitTest :app:lintRelease
+```
+
+생성 위치는 `app/build/outputs/apk/release/app-release.apk`입니다. 본인 키로 다시 빌드한 APK는 배포 APK와 서명이 다릅니다.
+
+### 개발용 debug 빌드
+
 ```powershell
 .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug
 ```
 
-디버그 APK는 `app/build/outputs/apk/debug/app-debug.apk`에 생성됩니다. 에뮬레이터 검사 방법과 결과는 [검증 기록](docs/product-redesign/validation.md)에 있습니다.
+디버그 APK는 `app/build/outputs/apk/debug/app-debug.apk`에 생성됩니다. [제출용 release 검증 기록](docs/submission-release.md)과 [기존 시연 검사 방법](docs/product-redesign/validation.md)을 참고하세요.
 
 ## 개발 문서
 

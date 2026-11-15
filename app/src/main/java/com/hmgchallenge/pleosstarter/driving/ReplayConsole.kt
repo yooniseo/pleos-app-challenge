@@ -1,7 +1,6 @@
 package com.hmgchallenge.pleosstarter.driving
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
@@ -33,8 +32,10 @@ data class ReplayControls(val gear: String, val speed: Int, val steering: Int, v
 
 /** One serial writer for the emulator's local Virtual Console, shared across Activity recreation. */
 internal object ReplayConsole {
-    fun supported(context: Context) = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
-        Build.HARDWARE in setOf("ranchu", "goldfish")
+    // Submission release retains replay on Pleos emulators; physical vehicles never use this writer.
+    fun supported(context: Context) =
+        context.packageManager.hasSystemFeature("android.hardware.type.automotive") &&
+            Build.HARDWARE in setOf("ranchu", "goldfish")
 
     private const val session = "/browser/session?client=chageun-auto-demo"
     @Volatile private var desired: ReplayControls? = null
