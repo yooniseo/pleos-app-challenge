@@ -275,7 +275,7 @@ class SharedCoachRepository(val database: TripDatabase) {
         if (q.weakness != "TURN_SIGNAL") return q
         val count = replaySignalCount()
         val step = if (count == 0) 0 else (count - 1) % 3 + 1
-        return q.copy(progress = step, target = 3, lifetimeCount = count)
+        return q.copy(progress = step, target = 3)
     }
 
     private fun computeRecommendations(source: String): RecommendationResult {

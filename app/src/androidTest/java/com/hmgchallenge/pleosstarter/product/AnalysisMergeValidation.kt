@@ -95,9 +95,10 @@ fun Instrumentation.runAnalysisMergeValidation() {
         waitForIdleSync();capture(app,"02-personalized-quests")
         onMain {check(app.window.decorView.findViewWithTag<Button>("recommend_card_0").performClick())}
         waitForIdleSync()
-        check(uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("관련 자동 시연 보기").isNotEmpty())
+        check(uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("점검 기록 없이 시연").isNotEmpty())
         sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);waitForIdleSync()
         onMain {
+            app.window.decorView.findViewWithTag<Button>("tab_QUESTS").performClick()
             app.window.decorView.findViewWithTag<Button>("quests_demo").performClick()
             check(app.questDiagnostics()?.size==6)
             app.window.decorView.findViewWithTag<Button>("tab_QUESTS").performClick()

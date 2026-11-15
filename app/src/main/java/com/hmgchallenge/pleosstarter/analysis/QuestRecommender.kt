@@ -20,7 +20,7 @@ data class Weakness(val key: String,val title: String,val average: Int?,val belo
                     val noteCount: Int,val priority: Double,val reason: String)
 
 data class Recommendation(val id: String,val weakness: String,val title: String,val goal: String,val reason: String,
-                          val kind: RecommendationKind,val progress: Int,val target: Int,val vehicleQuestId: String?=null, val lifetimeCount: Int?=null) {
+                          val kind: RecommendationKind,val progress: Int,val target: Int,val vehicleQuestId: String?=null) {
     val done get()=target>0 && progress>=target
 }
 

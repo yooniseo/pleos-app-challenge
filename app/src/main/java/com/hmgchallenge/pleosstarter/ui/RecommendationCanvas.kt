@@ -7,6 +7,7 @@ import com.hmgchallenge.pleosstarter.analysis.*
 
 class RecommendationCanvas(context: Context,assets: ProductIllustrations): QuestPageCanvas(context,assets) {
     var result: RecommendationResult?=null
+    lateinit var actionLabel: (Recommendation) -> String
     var sourceLabel="Pleos 차량 주행 기록 기준"
 
     override fun drawScene(c: Canvas) {
@@ -53,6 +54,9 @@ class RecommendationCanvas(context: Context,assets: ProductIllustrations): Quest
                 image(c,"quest_pin",725f,y+90,28f,28f)
                 text(c,tag,760f,y+87,19f,Color.WHITE,true)
                 wrappedText(c,q.goal,959f,y+80,575f,24f,Color.DKGRAY,false)
+                paint.textAlign=android.graphics.Paint.Align.RIGHT
+                text(c,actionLabel(q),1553f,y+24,24f,blue,true)
+                paint.textAlign=android.graphics.Paint.Align.LEFT
                 image(c,"quest_next",1570f,y+h/2-17,20f,35f)
                 val reason=if(q.target>0)"${q.progress}/${q.target} · ${q.reason}" else q.reason
                 text(c,reason.take(if(q.target>0)40 else 48),712f,y+h-41,19f,muted)

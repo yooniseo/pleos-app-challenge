@@ -201,21 +201,22 @@ fun Instrumentation.runQuestDesignValidation() {
                 check(firstSeen && secondSeen && app.session.completedAt != null)
             }
         }
-        fun openLaneMission(expected: Int) {
+        fun laneCard(expected: Int): Button {
+            lateinit var card: Button
             onMain {
                 app.showRecommendations("REPLAY")
                 val recommendations = app.recommendationDiagnostics()!!.recommendations
                 val index = recommendations.indexOfFirst { it.weakness == "TURN_SIGNAL" }
                 check(index >= 0 && recommendations[index].progress == expected && recommendations[index].target == 3)
-                app.window.decorView.findViewWithTag<Button>("recommend_card_$index").performClick()
-                check(app.window.decorView.findViewWithTag<Button>("mission_continue") != null)
+                card = app.window.decorView.findViewWithTag<Button>("recommend_card_$index")
             }
+            return card
         }
         onMain { app.select(RoadLesson.COMBINED); app.startPrepared() }
         driveAndCheck(0)
-        openLaneMission(1)
+        val firstCard = laneCard(1)
         waitForIdleSync(); capture(app,"13-mission-one")
-        onMain { app.window.decorView.findViewWithTag<Button>("mission_continue").performClick() }
+        onMain { firstCard.performClick() }
         onMain {
             val dialog = android.view.inspector.WindowInspector.getGlobalWindowViews()
                 .mapNotNull { it.findViewById<Button>(android.R.id.button3) }.single()
@@ -228,7 +229,7 @@ fun Instrumentation.runQuestDesignValidation() {
         driveAndCheck(1)
         onMain { app.showFeedback(requireNotNull(app.session.tripId)) }
         waitForIdleSync(); capture(app,"14-mission-clear")
-        openLaneMission(2)
+        laneCard(2)
         waitForIdleSync(); capture(app,"15-mission-two")
         proof.put("mission","1/3 → first lane OFF +0 → second lane RIGHT +1 → parked → 2/3")
         proof.put("reset","Clears recommendation inputs, retains historical 50-point report")
