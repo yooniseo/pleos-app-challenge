@@ -56,6 +56,22 @@ class ScenarioSpeechGate(private val minimumGapMs: Long=1000) {
     private var trip: String?=null
     private val delivered=mutableSetOf<String>()
     private var lastAt: Long?=null
+    fun nextForDrive(tripId: String?, s: SimpleRoadScenario, now: Long, enabled: Boolean, ready: Boolean, idle: Boolean): String? {
+        val cue = ScenarioCoachingCues.at(s)
+        if (s.lesson == RoadLesson.PARKING && s.started) {
+            val gear = s.parkingGear
+            val announcement = when (gear) {
+                "D" -> "전진 기어예요. 주차칸 옆에 천천히 맞춰요."
+                "R" -> "후진 기어예요. 뒤쪽과 양옆을 확인하세요."
+                "P" -> "주차 기어예요. 주차를 마쳤어요."
+                else -> null
+            }
+            val gearCue = cue.copy(identity = "parking-gear:$gear", spoken = announcement)
+            next(tripId, gearCue, now, enabled, ready, idle)?.let { return it }
+            if (cue.step in setOf(CoachingStep.PARK_POSITION, CoachingStep.PARK_CHECK, CoachingStep.COMPLETE)) return null
+        }
+        return next(tripId, cue, now, enabled, ready, idle)
+    }
     fun next(tripId: String?,cue: ScenarioCoachingCue,now: Long,enabled: Boolean,ready: Boolean,idle: Boolean): String? {
         if(tripId!=trip){trip=tripId;delivered.clear();lastAt=null}
         val text=cue.spoken ?: return null

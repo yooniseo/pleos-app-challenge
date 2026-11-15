@@ -19,6 +19,7 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
     var completed=0
     var target=0
     var complete=false
+    var showDetails=false
     var vehicleRecord=false
     var recordSource="DEMO  |  시연용 가상 기록"
     var scores: TripScores?=null
@@ -33,6 +34,53 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
             text(c,"자동으로 채운 점수나 완료 기록은 없어요",540f,720f,27f)
             return
         }
+        if (complete && !vehicleRecord) {
+            drawArcade(c, requireNotNull(trip))
+            if (!showDetails) return
+        } else drawRecordSummary(c)
+        drawFeedback(c)
+    }
+
+    private fun drawArcade(c: Canvas, trip: Trip) {
+        val blue = Color.rgb(9,63,158)
+        val yellow = Color.rgb(249,217,77)
+        val cream = Color.rgb(255,246,222)
+        c.save()
+        c.rotate(180f,267.5f,-2.5f)
+        assets.figma?.draw(c,"arcade_mountain",RectF(-128.7f,-400f,663.7f,196.3f),true)
+        c.restore()
+        assets.figma?.draw(c,"arcade_panel",RectF(0f,-40.46f,686.37f,1256.46f),true)
+        text(c,"DRIVE",65f,60f,112f,Color.WHITE,true)
+        text(c,"CLEAR!",63f,163f,113f,yellow,true)
+        text(c,"지금 등급은",69f,382f,24f,Color.WHITE)
+        text(c,state.levelName,67f,419f,48f,Color.WHITE,true)
+        if (state.levelName != "MASTER") {
+            assets.figma?.draw(c,"arcade_rank_arrow",RectF(302f,427f,374f,483f),true)
+            text(c,"다음 등급은",414f,382f,24f,Color.WHITE)
+            text(c,if(state.levelName=="STARTER") "DRIVER" else "MASTER",414f,431f,30f,yellow,true)
+        }
+        val km = trip.distanceKm
+        val seconds = trip.endedAt?.let { ((it - trip.startedAt) / 1000).coerceAtLeast(0) }
+        fun row(y: Float, en: String, ko: String, value: String, unit: String) {
+            box(c,67f,y,467f,104f,cream,5f)
+            text(c,en,97f,y+16f,20f,blue,true)
+            text(c,ko,97f,y+52f,20f,blue)
+            text(c,value,251f,y+17f,48f,blue,true)
+            text(c,unit,462f,y+51f,20f,blue)
+        }
+        row(521f,"DISTANCE","주행 거리",km?.let { String.format(Locale.KOREA,if(it<1) "%.3f" else "%.1f",it) } ?: "—","KM")
+        val shortTrip = seconds != null && seconds < 60
+        row(671f,"PLAY TIME","주행 시간",seconds?.let { if(shortTrip) it else it/60 }?.toString() ?: "—",if(shortTrip) "SEC" else "MIN")
+        box(c,67f,820f,619f,145f,yellow,7f)
+        text(c,"QUEST",109f,843f,28f,blue,true)
+        text(c,"완료 퀘스트",109f,892f,27f,blue)
+        text(c,completed.toString(),361f,847f,66f,blue,true)
+        text(c,"/ $target",551f,870f,44f,blue)
+        text(c,recordSource,68f,1025f,20f,cream)
+        text(c,"시연 코스 · © OpenStreetMap contributors · OSRM",68f,1062f,16f,cream)
+    }
+
+    private fun drawRecordSummary(c: Canvas) {
         assets.completionPanel(c)
         text(c,"DRIVE",65f,46f,112f,Color.WHITE,true)
         text(c,if(complete)"CLEAR!" else "RECORD",63f,149f,if(complete)113f else 90f,Color.rgb(249,217,77),true)
@@ -51,6 +99,9 @@ class CompletionCanvas(context: Context,assets: ProductIllustrations): SceneCanv
         text(c,"$completed / $target",345f,850f,66f,Color.rgb(25,29,36),true)
         text(c,recordSource,69f,1003f,26f,Palette.cream)
         text(c,"© OpenStreetMap contributors · OSRM",69f,1054f,18f,Palette.cream)
+    }
+
+    private fun drawFeedback(c: Canvas) {
         box(c,790f,400f,810f,540f,Color.argb(243,255,255,255),36f)
         text(c,"차근차근, 오늘의 성장",835f,438f,44f,Palette.ink,true)
         val good=report?.goodPoints?.let(::JSONArray)

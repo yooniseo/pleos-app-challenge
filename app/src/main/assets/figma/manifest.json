@@ -301,6 +301,27 @@
       "width": 35,
       "height": 35,
       "bytes": 573
+    },
+    {
+      "file": "arcade_mountain.png",
+      "nodeId": "213:14306",
+      "width": 792,
+      "height": 596,
+      "bytes": 14450
+    },
+    {
+      "file": "arcade_panel.png",
+      "nodeId": "213:14307",
+      "width": 686,
+      "height": 1297,
+      "bytes": 55765
+    },
+    {
+      "file": "arcade_rank_arrow.png",
+      "nodeId": "213:14335",
+      "width": 72,
+      "height": 56,
+      "bytes": 469
     }
   ],
   "export": "Figma Plugin API PNG, contentsOnly=true, useAbsoluteBounds=true; original file unchanged"

@@ -82,6 +82,11 @@ fun Instrumentation.runParkingModesValidation() {
                 automation.windows.any { it.root?.packageName?.toString() == "ai.umos.car.evs" }
         }
         capture("on")
+        fun played() = app.voiceDiagnostics().filter { it.kind == "PLAYBACK_DONE" }.mapNotNull { it.values["text"] }
+        awaitState("steering speech with rear camera visible") {
+            played().any { it.contains("오른쪽으로 더 돌리세요") } &&
+                automation.windows.any { it.root?.packageName?.toString() == "ai.umos.car.evs" }
+        }
         val card = automation.windows.mapNotNull { it.root }
             .flatMap { it.findAccessibilityNodeInfosByText("백미러 화면 끄고 주차 가이드 보기") }
             .first { it.isClickable }
@@ -91,8 +96,19 @@ fun Instrumentation.runParkingModesValidation() {
                 app.session.scenario.parkingGear == "R" && !app.session.paused && app.session.tripId == trip }
         }
         awaitState("parking completed") { mainCheck { app.screen == AppScreen.FEEDBACK && app.session.completedAt != null } }
+        awaitState("parking gear announcement") { played().any { it.contains("주차 기어") } }
+        val announcements = played()
+        for (gearLabel in listOf("전진 기어", "후진 기어", "주차 기어")) {
+            check(announcements.count { it.contains(gearLabel) } == 1) { announcements }
+        }
+        check(announcements.any { it.contains("풀어") }) { announcements }
+        capture("drive-clear")
+        runOnMainSync {
+            app.window.decorView.findViewWithTag<Button>("feedback_details").performClick()
+            check(app.window.decorView.findViewWithTag<Button>("feedback_memo") != null)
+        }
         check(db.trips().map { it.tripId } == listOf(trip)) { "Unexpected trips: ${db.trips()}" }
-        result.putString("result", "PASS diagram → rear camera → diagram; SDK P → R → P; same trip completed")
+        result.putString("result", "PASS diagram → rear camera → diagram; SDK P → R → P; clear and details; TTS: $announcements")
         code = Activity.RESULT_OK
     } catch (e: Throwable) {
         result.putString("error", e.stackTraceToString())

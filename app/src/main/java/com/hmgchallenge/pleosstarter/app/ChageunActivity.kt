@@ -45,6 +45,7 @@ class ChageunActivity: Activity() {
     private val speechGate=ScenarioSpeechGate()
     private val speechEvidence=RuntimeEvidence()
     private var completionShown: String?=null
+    private var detailedReportTrip: String?=null
     private var points=0
     private var selectedTrip: String?=null
     private var mapTilted=true
@@ -107,6 +108,7 @@ class ChageunActivity: Activity() {
     override fun onStart() {
         super.onStart();if(!::session.isInitialized)return
         handler.removeCallbacks(finishCameraReplay)
+        handler.removeCallbacks(releaseParkingVoice)
         active=true;lastTick=SystemClock.elapsedRealtime();telemetry.start()
         recommendationObserver=repository.observe {key->
             if(key in setOf("note","trip","report","vehicle-quests","quest:demo")) {
@@ -118,7 +120,7 @@ class ChageunActivity: Activity() {
             if(permission?.protection==android.content.pm.PermissionInfo.PROTECTION_DANGEROUS)requestPermissions(arrayOf("android.car.permission.CAR_SPEED"),834)
         }
         celebration=ScenarioCelebration(this,{active && telemetry.stationary},{celebrationStatus=it}).also {it.start()}
-        if(packageManager.hasSystemFeature("android.hardware.type.automotive"))voice=PleosCoachVoice(this,{voiceStatus=it},{speechEvidence.record(it)}).also {it.start()}
+        if(voice==null && packageManager.hasSystemFeature("android.hardware.type.automotive"))voice=PleosCoachVoice(this,{voiceStatus=it},{speechEvidence.record(it)}).also {it.start()}
         handler.post(loop)
     }
     private val refreshRecommendations=Runnable {if(active && screen==AppScreen.QUESTS && recommendView)show(AppScreen.QUESTS)}
@@ -184,9 +186,7 @@ class ChageunActivity: Activity() {
             if(pendingVehicleSpeech!=null && coach && voiceEnabled && voice?.isReady==true && voice?.isBusy==false) {
                 voice?.speak(pendingVehicleSpeech!!);pendingVehicleSpeech=null
             }
-            speechGate.next(session.tripId,ScenarioCoachingCues.at(s),now,
-                coach && voiceEnabled && vehicleQuests.tripId==null && !session.paused && session.learning().automaticSpeech,
-                voice?.isReady==true,voice?.isBusy==false)?.let {voice?.speak(it)}
+            speakReplayCue(now)
             handler.postDelayed(this,50)
         }
     }
@@ -221,6 +221,7 @@ class ChageunActivity: Activity() {
                     trip=id?.let(repository::trip);report=id?.let(repository::report);state=session.quest
                     scores=id?.let(repository::scores)
                     complete=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)?.optString("status")=="COMPLETE" && repository.events(id).any {it.type=="PRACTICE_REWARD" && JSONObject(it.payload).optString("skill")=="PARKING"}
+                    showDetails = id != null && detailedReportTrip == id
                     earned=id?.let(repository::tripPoints) ?: 0
                     completed=id?.let {repository.completedSkills(it).size} ?: 0
                     val metadata=id?.let {repository.snapshot("trip:$it")}?.let(::JSONObject)
@@ -231,6 +232,14 @@ class ChageunActivity: Activity() {
                         completed=attempts.count {it.success};target=attempts.size
                         recordSource=if(trip?.source=="VEHICLE")"Pleos 차량 신호 기록" else "TEST · 가상 입력 기록"
                     }
+                }
+                if (feedback.complete) {
+                    // The report uses the practice course as an illustration, including for archived trips.
+                    val route = session.course.drivingCourse()
+                    val distance = (route.turnDistance - 20).coerceAtLeast(0.0)
+                    val ahead = (0..40).map { route.at(distance + it * 2) }
+                    bg.setFrame(route, NavigationSimulationFrame(ahead.first(),route.bearing(distance),
+                        distance, route.turnDistance - distance, ahead))
                 }
                 canvas=feedback;layers.addView(bg,FrameLayout.LayoutParams(-1,-1));layers.addView(feedback,FrameLayout.LayoutParams(-1,-1));layers
             }
@@ -297,6 +306,15 @@ class ChageunActivity: Activity() {
                 }
             }
             AppScreen.FEEDBACK->{
+                val report = canvas as CompletionCanvas
+                val arcade = report.complete && !report.vehicleRecord
+                if (arcade) {
+                    scene.button(if(report.showDetails) "결과로 돌아가기" else "상세 피드백",
+                        "feedback_details",1315f,55f,310f,76f) {
+                        detailedReportTrip = if(report.showDetails) null else report.trip?.tripId
+                        show(screen)
+                    }
+                }
                 if(vehicleQuests.tripId!=null)vehicleFinishButton=scene.button("차량 주행 기록 마치기","vehicle_record_finish",790f,305f,490f,68f){
                     if(telemetry.motion!=MotionState.STOPPED)toast("정차 후 주행 기록을 마칠 수 있어요")
                     else {
@@ -304,11 +322,13 @@ class ChageunActivity: Activity() {
                         if(vehicleQuests.finish()){vehicleMovedInGear=false;if(id!=null)showFeedback(id)}else toast(vehicleQuests.error ?: "저장 실패")
                     }
                 }
-                scene.button("지난 기록","records_history",790f,190f,270f,90f){history()}
-                scene.button("어려웠어요","feedback_difficult",1110f,190f,270f,90f){chooseDifficultArea()}
-                scene.button("메모 남기기","feedback_memo",1410f,190f,230f,90f){
-                    if(feedbackTripId()==null)toast("주행 기록을 남긴 뒤 메모할 수 있어요")
-                    else memo=DrivingMemoDialog(this,{text,category,difficult->saveFeedbackNote(text,category,difficult)},{memo=null;show(screen)}).also {it.show("OTHER")}
+                if (!arcade || report.showDetails) {
+                    scene.button("지난 기록","records_history",790f,190f,270f,90f){history()}
+                    scene.button("어려웠어요","feedback_difficult",1110f,190f,270f,90f){chooseDifficultArea()}
+                    scene.button("메모 남기기","feedback_memo",1410f,190f,230f,90f){
+                        if(feedbackTripId()==null)toast("주행 기록을 남긴 뒤 메모할 수 있어요")
+                        else memo=DrivingMemoDialog(this,{text,category,difficult->saveFeedbackNote(text,category,difficult)},{memo=null;show(screen)}).also {it.show("OTHER")}
+                    }
                 }
                 scene.button("맞춤 퀘스트","feedback_recommend",1010f,970f,290f,90f){
                     val id=selectedTrip ?: session.tripId ?: repository.trips().firstOrNull {it.endedAt!=null}?.tripId
@@ -512,14 +532,32 @@ class ChageunActivity: Activity() {
 
     // Pleos owns the foreground during reverse. Finish only the active emulator parking
     // manoeuvre so the console returns to Park and the same trip can show its feedback.
+    private val releaseParkingVoice = Runnable { voice?.release(); voice = null }
+
+    private fun speakReplayCue(now: Long) {
+        val speaker = voice ?: return
+        val s = session.scenario
+        if (!s.started || !voiceEnabled || !coach || vehicleQuests.tripId != null) return
+        val parking = s.lesson == RoadLesson.PARKING
+        if (session.paused && !(parking && s.complete)) return
+        val settings = session.quest.settings
+        val skill = com.hmgchallenge.pleosstarter.quests.CoachSkill.PARKING
+        val automatic = if (parking) skill !in settings.disabled && skill !in settings.graduated &&
+            settings.levels[skill] != com.hmgchallenge.pleosstarter.quests.GuidanceLevel.ON_REQUEST
+            else session.learning().automaticSpeech
+        speechGate.nextForDrive(session.tripId, s, now, automatic, speaker.isReady, !speaker.isBusy)?.let(speaker::speak)
+    }
+
     private val finishCameraReplay = object : Runnable {
         override fun run() {
             val now = SystemClock.elapsedRealtime()
             session.tick(now - lastTick, now, null, false)
             lastTick = now
             val parking = session.scenario
+            speakReplayCue(now)
             if (session.paused || parking.complete || parking.parkingGear != "R") {
                 mirror(null)
+                handler.postDelayed(releaseParkingVoice, 8000)
                 return
             }
             mirror(ReplayControls.from(parking, session.indicatorOverride))
@@ -533,6 +571,7 @@ class ChageunActivity: Activity() {
         if (!isFinishing && mirroredFrame?.gear == "Reverse" && !session.paused) {
             handler.post(finishCameraReplay)
         } else {
+            releaseParkingVoice.run()
             mirror(null)
             if (::session.isInitialized) session.pause()
         }
@@ -541,11 +580,13 @@ class ChageunActivity: Activity() {
             vehicleQuests.suspendInputs()
             if(vehicleQuests.tripId!=null)vehicleQuests.finish(false)
         }
-        voice?.release();voice=null;celebration?.stop();celebration=null
+        celebration?.stop();celebration=null
         if(::telemetry.isInitialized)telemetry.stop()
         super.onStop()
     }
     override fun onDestroy() {
+        handler.removeCallbacks(releaseParkingVoice)
+        releaseParkingVoice.run()
         handler.removeCallbacks(finishCameraReplay)
         if (mirroredFrame?.gear == "Reverse") cameraCoach.hide()
         if(mirroredFrame!=null){mirroredFrame=null;ReplayConsole.update(null)}

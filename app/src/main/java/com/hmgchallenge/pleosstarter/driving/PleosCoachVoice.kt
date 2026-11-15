@@ -20,13 +20,14 @@ class PleosCoachVoice(context: Context, private val status: (String) -> Unit,
     private var speaking = false
     private var stopping = false
     private var next: String? = null
+    private var currentText = ""
     val isReady get()=ready && !released
     val isBusy get()=speaking || stopping
     private val events = object : EventListener {
         override fun onReady() = Unit
-        override fun onStart() = post { observe(ApiObservation("TTS","PLAYBACK_STARTED"));speaking = true; status("Pleos 음성 안내 중") }
+        override fun onStart() = post { observe(ApiObservation("TTS","PLAYBACK_STARTED",mapOf("text" to currentText)));speaking = true; status("Pleos 음성 안내 중") }
         override fun onUpdatedRms(rms: Double) = Unit
-        override fun onDone() = post { observe(ApiObservation("TTS","PLAYBACK_DONE"));speaking = false; stopping = false; status("Pleos 음성 준비됨"); drain() }
+        override fun onDone() = post { observe(ApiObservation("TTS","PLAYBACK_DONE",mapOf("text" to currentText)));speaking = false; stopping = false; status("Pleos 음성 준비됨"); drain() }
         override fun onStop() = post { speaking = false; stopping = false; status("음성 안내 멈춤"); drain() }
         override fun onError(errorType: ErrorType) = post {
             observe(ApiObservation("TTS","ERROR",mapOf("error" to errorType.name)))
@@ -58,7 +59,7 @@ class PleosCoachVoice(context: Context, private val status: (String) -> Unit,
     }
     private fun drain() {
         val text = next ?: return
-        next = null; speaking = true
+        next = null; speaking = true; currentText = text
         runCatching { sdk.speak(text) }.onFailure { speaking = false; status("음성 요청 실패 · ${it.javaClass.simpleName}") }
     }
     fun stop() { next = null; if(ready && speaking) requestStop() }
