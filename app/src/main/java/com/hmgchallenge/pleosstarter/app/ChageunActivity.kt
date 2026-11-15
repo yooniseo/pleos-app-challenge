@@ -26,7 +26,7 @@ class ChageunActivity: Activity() {
     private var vehicleMovedInGear=false
     private var mirroredFrame: ReplayControls?=null
     private var parkingCameraEnabled = true
-    private val cameraCoach by lazy { ParkingCameraCoach(this, art) { setParkingCamera(false) } }
+    private val cameraCoach by lazy { ParkingCameraCoach(this) { setParkingCamera(false) } }
     private var recommendView=true
     private var recommendationSource="VEHICLE"
     private var recommendationObserver: java.io.Closeable?=null
