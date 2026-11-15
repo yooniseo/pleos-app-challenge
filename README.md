@@ -10,7 +10,7 @@
 
 - [차근차근 0.3.0 release APK 다운로드](https://raw.githubusercontent.com/yooniseo/pleos-app-challenge/v0.3.0/apk/%EC%BD%94%EC%B9%98%EA%BC%AC%EC%B9%98_%EC%B0%A8%EA%B7%BC%EC%B0%A8%EA%B7%BC_release.apk)
 - [GitHub Release · 설치 파일과 검증 결과](https://github.com/yooniseo/pleos-app-challenge/releases/tag/v0.3.0)
-- [제출 버전 소스 코드](https://github.com/yooniseo/pleos-app-challenge/tree/v0.3.0) · [APK SHA-256 확인](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0/SHA256SUMS.txt)
+- [제출 버전 소스 코드](app/src) · [APK SHA-256 확인](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0/SHA256SUMS.txt)
 
 저장소에는 제출 규격의 한글 파일명으로, GitHub Release에는 동일한 APK를 `coachkkochi_chageunchageun_release.apk`라는 영문 파일명으로 제공합니다.
 
@@ -115,10 +115,3 @@ release에서도 에뮬레이터의 로컬 Virtual Console(`127.0.0.1:8088`)에 
 ```
 
 디버그 APK는 `app/build/outputs/apk/debug/app-debug.apk`에 생성됩니다. [제출용 release 검증 기록](docs/submission-release.md)과 [기존 시연 검사 방법](docs/product-redesign/validation.md)을 참고하세요.
-
-## 개발 문서
-
-- [앱 구조와 데이터 흐름](docs/product-redesign/architecture.md)
-- [화면과 디자인 자료](docs/product-redesign/figma-assets.md)
-- [주행 분석과 맞춤 퀘스트](docs/driving-analysis-integration.md)
-- [6개 영역별 퀘스트 판정 조건](docs/quests-six-areas-and-figma.md)
