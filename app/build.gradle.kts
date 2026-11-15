@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("kotlin-kapt")   // Room 코드 생성 (Kotlin 1.9.25에 포함, 별도 버전 지정 불필요)
 }
 
 android {
@@ -13,8 +14,9 @@ android {
         applicationId = "com.hmgchallenge.pleosstarter"
         minSdk = 28
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
+        testInstrumentationRunner = "com.hmgchallenge.pleosstarter.product.ProductSmokeRunner"
     }
 
     compileOptions {
@@ -27,5 +29,12 @@ android {
 dependencies {
     implementation("ai.pleos.playground:Vehicle:2.3.2")
     implementation("ai.pleos.playground:NaviHelper:3.0.5")
+    // Driving coach speech; ON_DEVICE avoids server registration and project secrets.
+    implementation("ai.pleos.playground:TextToSpeech:3.3.1")
+    implementation("ai.pleos.playground:SpeechToText:3.3.1")
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     testImplementation("junit:junit:4.13.2")
 }

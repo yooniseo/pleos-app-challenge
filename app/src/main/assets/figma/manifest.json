@@ -1,0 +1,286 @@
+{
+  "fileKey": "Sqpacf0pJmLc2RNnZBUrqo",
+  "assets": [
+    {
+      "file": "mascot.png",
+      "nodeId": "151:12571",
+      "width": 150,
+      "height": 150,
+      "bytes": 28594
+    },
+    {
+      "file": "quest_flag.png",
+      "nodeId": "147:12549",
+      "width": 130,
+      "height": 130,
+      "bytes": 7633
+    },
+    {
+      "file": "caution.png",
+      "nodeId": "149:12567",
+      "width": 70,
+      "height": 145,
+      "bytes": 7197
+    },
+    {
+      "file": "chevron.png",
+      "nodeId": "144:12544",
+      "width": 20,
+      "height": 35,
+      "bytes": 253
+    },
+    {
+      "file": "coach_on.png",
+      "nodeId": "141:12501",
+      "width": 141,
+      "height": 71,
+      "bytes": 9425
+    },
+    {
+      "file": "coach_off.png",
+      "nodeId": "141:12510",
+      "width": 141,
+      "height": 71,
+      "bytes": 3679
+    },
+    {
+      "file": "warning_marker.png",
+      "nodeId": "153:12608",
+      "width": 150,
+      "height": 150,
+      "bytes": 4958
+    },
+    {
+      "file": "nav_turn.png",
+      "nodeId": "113:13047",
+      "width": 96,
+      "height": 133,
+      "bytes": 1105
+    },
+    {
+      "file": "nav_turn_next.png",
+      "nodeId": "113:13052",
+      "width": 58,
+      "height": 81,
+      "bytes": 577
+    },
+    {
+      "file": "nav_expand.png",
+      "nodeId": "113:13040",
+      "width": 35,
+      "height": 35,
+      "bytes": 831
+    },
+    {
+      "file": "map_pointer.png",
+      "nodeId": "113:13024",
+      "width": 19,
+      "height": 17,
+      "bytes": 327
+    },
+    {
+      "file": "map_settings.png",
+      "nodeId": "113:12812",
+      "width": 29,
+      "height": 30,
+      "bytes": 509
+    },
+    {
+      "file": "arrival_search.png",
+      "nodeId": "113:13137",
+      "width": 113,
+      "height": 60,
+      "bytes": 1524
+    },
+    {
+      "file": "progress_start.png",
+      "nodeId": "113:13133",
+      "width": 20,
+      "height": 20,
+      "bytes": 675
+    },
+    {
+      "file": "progress_current.png",
+      "nodeId": "113:13130",
+      "width": 20,
+      "height": 20,
+      "bytes": 716
+    },
+    {
+      "file": "arrival_handle.png",
+      "nodeId": "113:13114",
+      "width": 120,
+      "height": 5,
+      "bytes": 217
+    },
+    {
+      "file": "quest_flag_outline.png",
+      "nodeId": "130:12610",
+      "width": 67,
+      "height": 92,
+      "bytes": 1198
+    },
+    {
+      "file": "quest_chevron_dark.png",
+      "nodeId": "130:12549",
+      "width": 27,
+      "height": 48,
+      "bytes": 399
+    },
+    {
+      "file": "coach_off_avatar.png",
+      "nodeId": "130:12543",
+      "width": 63,
+      "height": 62,
+      "bytes": 8071
+    },
+    {
+      "file": "nav_straight.png",
+      "nodeId": "175:14724",
+      "width": 67,
+      "height": 132,
+      "bytes": 872
+    },
+    {
+      "file": "drive_car.png",
+      "nodeId": "109:9470",
+      "width": 357,
+      "height": 286,
+      "bytes": 34129
+    },
+    {
+      "file": "road_tree.png",
+      "nodeId": "109:9356",
+      "width": 172,
+      "height": 225,
+      "bytes": 7277
+    },
+    {
+      "file": "battery.png",
+      "nodeId": "113:13115",
+      "width": 39,
+      "height": 20,
+      "bytes": 456
+    },
+    {
+      "file": "crosswalk.png",
+      "nodeId": "113:11684",
+      "width": 677,
+      "height": 116,
+      "bytes": 23827
+    },
+    {
+      "file": "road_tree_far.png",
+      "nodeId": "109:9372",
+      "width": 176,
+      "height": 230,
+      "bytes": 7363
+    },
+    {
+      "file": "road_tree_near.png",
+      "nodeId": "109:9388",
+      "width": 285,
+      "height": 372,
+      "bytes": 11360
+    },
+    {
+      "file": "coach_map_on.png",
+      "nodeId": "143:12526",
+      "width": 175,
+      "height": 88,
+      "bytes": 13117
+    },
+    {
+      "file": "route_segments.png",
+      "nodeId": "113:13122",
+      "width": 489,
+      "height": 6,
+      "bytes": 349
+    },
+    {
+      "file": "quest_landscape.png",
+      "nodeId": "195:17572",
+      "width": 1700,
+      "height": 1184,
+      "bytes": 1346685
+    },
+    {
+      "file": "quest_coach.png",
+      "nodeId": "195:18850",
+      "width": 820,
+      "height": 1024,
+      "bytes": 699389
+    },
+    {
+      "file": "badge_prepare.png",
+      "nodeId": "195:17666",
+      "width": 130,
+      "height": 130,
+      "bytes": 4792
+    },
+    {
+      "file": "badge_lane.png",
+      "nodeId": "195:17682",
+      "width": 130,
+      "height": 130,
+      "bytes": 4512
+    },
+    {
+      "file": "badge_intersection.png",
+      "nodeId": "195:17697",
+      "width": 130,
+      "height": 130,
+      "bytes": 4391
+    },
+    {
+      "file": "badge_speed.png",
+      "nodeId": "195:17712",
+      "width": 130,
+      "height": 130,
+      "bytes": 5813
+    },
+    {
+      "file": "badge_parking.png",
+      "nodeId": "195:17727",
+      "width": 130,
+      "height": 130,
+      "bytes": 4528
+    },
+    {
+      "file": "quest_star.png",
+      "nodeId": "195:17581",
+      "width": 30,
+      "height": 29,
+      "bytes": 433
+    },
+    {
+      "file": "quest_pin.png",
+      "nodeId": "175:17245",
+      "width": 30,
+      "height": 30,
+      "bytes": 545
+    },
+    {
+      "file": "quest_next.png",
+      "nodeId": "175:17252",
+      "width": 20,
+      "height": 35,
+      "bytes": 364
+    },
+    {
+      "file": "quest_underline.png",
+      "nodeId": "175:17122",
+      "width": 563,
+      "height": 10,
+      "bytes": 2640
+    },
+    {
+      "file": "quest_halo.png",
+      "nodeId": "195:18851",
+      "width": 312,
+      "height": 312,
+      "bytes": 4969
+    }
+  ],
+  "export": "Figma Plugin API PNG, contentsOnly=true, useAbsoluteBounds=true; original file unchanged"
+}
