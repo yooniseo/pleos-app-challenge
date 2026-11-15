@@ -8,9 +8,11 @@
 
 - 저장소 내 APK 경로: [apk/코치꼬치_차근차근_release.apk](apk/코치꼬치_차근차근_release.apk)
 
-- [차근차근 0.3.0 release APK 다운로드](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0-submission-coachkkochi/%EC%BD%94%EC%B9%98%EA%BC%AC%EC%B9%98_%EC%B0%A8%EA%B7%BC%EC%B0%A8%EA%B7%BC_release.apk)
-- [GitHub Release · 설치 파일과 검증 결과](https://github.com/yooniseo/pleos-app-challenge/releases/tag/v0.3.0-submission-coachkkochi)
-- [제출 버전 소스 코드](https://github.com/yooniseo/pleos-app-challenge/tree/v0.3.0-submission-coachkkochi) · [APK SHA-256 확인](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0-submission-coachkkochi/SHA256SUMS.txt)
+- [차근차근 0.3.0 release APK 다운로드](https://raw.githubusercontent.com/yooniseo/pleos-app-challenge/v0.3.0/apk/%EC%BD%94%EC%B9%98%EA%BC%AC%EC%B9%98_%EC%B0%A8%EA%B7%BC%EC%B0%A8%EA%B7%BC_release.apk)
+- [GitHub Release · 설치 파일과 검증 결과](https://github.com/yooniseo/pleos-app-challenge/releases/tag/v0.3.0)
+- [제출 버전 소스 코드](https://github.com/yooniseo/pleos-app-challenge/tree/v0.3.0) · [APK SHA-256 확인](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0/SHA256SUMS.txt)
+
+저장소에는 제출 규격의 한글 파일명으로, GitHub Release에는 동일한 APK를 `coachkkochi_chageunchageun_release.apk`라는 영문 파일명으로 제공합니다.
 
 별도 키로 서명한 release APK이며 디버깅은 비활성화되어 있습니다. Pleos 에뮬레이터에서 평가하는 제출 버전입니다.
 
