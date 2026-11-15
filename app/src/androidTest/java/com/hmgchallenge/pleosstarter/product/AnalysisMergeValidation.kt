@@ -93,6 +93,10 @@ fun Instrumentation.runAnalysisMergeValidation() {
             check(app.window.decorView.findViewWithTag<Button>("quests_vehicle")==null)
         }
         waitForIdleSync();capture(app,"02-personalized-quests")
+        onMain {check(app.window.decorView.findViewWithTag<Button>("recommend_card_0").performClick())}
+        waitForIdleSync()
+        check(uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("관련 자동 시연 보기").isNotEmpty())
+        sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);waitForIdleSync()
         onMain {
             app.window.decorView.findViewWithTag<Button>("quests_demo").performClick()
             check(app.questDiagnostics()?.size==6)

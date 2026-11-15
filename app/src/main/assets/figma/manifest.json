@@ -196,6 +196,90 @@
       "width": 489,
       "height": 6,
       "bytes": 349
+    },
+    {
+      "file": "quest_landscape.png",
+      "nodeId": "195:17572",
+      "width": 1700,
+      "height": 1184,
+      "bytes": 1346685
+    },
+    {
+      "file": "quest_coach.png",
+      "nodeId": "195:18850",
+      "width": 820,
+      "height": 1024,
+      "bytes": 699389
+    },
+    {
+      "file": "badge_prepare.png",
+      "nodeId": "195:17666",
+      "width": 130,
+      "height": 130,
+      "bytes": 4792
+    },
+    {
+      "file": "badge_lane.png",
+      "nodeId": "195:17682",
+      "width": 130,
+      "height": 130,
+      "bytes": 4512
+    },
+    {
+      "file": "badge_intersection.png",
+      "nodeId": "195:17697",
+      "width": 130,
+      "height": 130,
+      "bytes": 4391
+    },
+    {
+      "file": "badge_speed.png",
+      "nodeId": "195:17712",
+      "width": 130,
+      "height": 130,
+      "bytes": 5813
+    },
+    {
+      "file": "badge_parking.png",
+      "nodeId": "195:17727",
+      "width": 130,
+      "height": 130,
+      "bytes": 4528
+    },
+    {
+      "file": "quest_star.png",
+      "nodeId": "195:17581",
+      "width": 30,
+      "height": 29,
+      "bytes": 433
+    },
+    {
+      "file": "quest_pin.png",
+      "nodeId": "175:17245",
+      "width": 30,
+      "height": 30,
+      "bytes": 545
+    },
+    {
+      "file": "quest_next.png",
+      "nodeId": "175:17252",
+      "width": 20,
+      "height": 35,
+      "bytes": 364
+    },
+    {
+      "file": "quest_underline.png",
+      "nodeId": "175:17122",
+      "width": 563,
+      "height": 10,
+      "bytes": 2640
+    },
+    {
+      "file": "quest_halo.png",
+      "nodeId": "195:18851",
+      "width": 312,
+      "height": 312,
+      "bytes": 4969
     }
   ],
   "export": "Figma Plugin API PNG, contentsOnly=true, useAbsoluteBounds=true; original file unchanged"

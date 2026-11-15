@@ -260,21 +260,21 @@ class ChageunActivity: Activity() {
                 }
             }
             AppScreen.QUESTS->{
-                scene.button("맞춤 퀘스트","quests_recommend",70f,228f,290f,58f,recommendView){showRecommendations(recommendationSource)}
-                scene.button("종합 기록","quests_demo",380f,228f,290f,58f,!recommendView){showQuestProgress()}
+                scene.button("맞춤 퀘스트","quests_recommend",70f,231f,292f,59f,recommendView){showRecommendations(recommendationSource)}
+                scene.button("종합 기록","quests_demo",402f,231f,292f,59f,!recommendView){showQuestProgress()}
                 if(recommendView) {
-                    scene.button("기준: ${when(recommendationSource){"REPLAY"->"시연 기록";"SIMULATION"->"가상 신호 TEST";else->"차량 주행"}}","recommend_source",1100f,228f,505f,58f){chooseRecommendationSource()}
-                    repository.recommendations(recommendationSource).recommendations.forEachIndexed {i,q->
-                        scene.button("","recommend_card_$i",620f,300f+i*190f,1015f,170f){recommendationDetails(q)}.apply {
+                    scene.button("${when(recommendationSource){"REPLAY"->"시연 기록";"SIMULATION"->"가상 신호 TEST";else->"차량 주행"}}","recommend_source",734f,231f,292f,59f){chooseRecommendationSource()}
+                    val recommendations=(canvas as RecommendationCanvas).result?.recommendations.orEmpty()
+                    recommendations.forEachIndexed {i,q->
+                        scene.button("","recommend_card_$i",667f,RecommendationCanvas.cardTop(i,recommendations.size),963f,RecommendationCanvas.cardHeight(recommendations.size)){recommendationDetails(q)}.apply {
                             background=null;elevation=0f;contentDescription="${q.title} · ${q.reason} · 자세히 보기"
                         }
                     }
-                    scene.button("지도로 돌아가기","recommend_to_map",1240f,985f,360f,68f,true){show(AppScreen.MAP)}
                 }else {
-                    scene.button("★ 퀘스트 계속하기","quest_continue",555f,965f,600f,80f,true){show(if(session.scenario.lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP);if(!session.scenario.started || session.paused)start()}
-                    scene.button("초기화","quest_reset",1435f,178f,195f,70f){resetQuests()}
+                    scene.button("★ 퀘스트 계속하기","quest_continue",1211f,944f,445f,66f,true){show(if(session.scenario.lesson==RoadLesson.PARKING)AppScreen.PARKING else AppScreen.MAP);if(!session.scenario.started || session.paused)start()}
+                    scene.button("초기화","quest_reset",1461f,231f,195f,53f){resetQuests()}
                     com.hmgchallenge.pleosstarter.quests.ProductQuestCatalog.all.forEachIndexed {i,quest->
-                        scene.button("", "quest_card_$i",65f+(i%3)*540,315f+(i/3)*300,510f,268f){
+                        scene.button("", "quest_card_$i",62f+(i%3)*541,322f+(i/3)*299,512f,270f){
                             when(quest.skill) {
                                 com.hmgchallenge.pleosstarter.quests.CoachSkill.PREPARATION->if(session.tripId==null || session.scenario.complete)start()else checklist(quest.skill)
                                 com.hmgchallenge.pleosstarter.quests.CoachSkill.FINISH->checklist(quest.skill)
@@ -317,7 +317,14 @@ class ChageunActivity: Activity() {
         }
         // These destinations are always available; no separate navy/white application tasks.
         val names=listOf("지도 · 주행 코치","퀘스트","주차 가이드","주행 피드백")
-        AppScreen.values().forEachIndexed {i,dest->scene.button(names[i],"tab_${dest.name}",25f+420*i,1100f,390f,70f,dest==screen){if(dest==AppScreen.QUESTS)showRecommendations(recommendationSource)else show(dest)}}
+        AppScreen.values().forEachIndexed {i,dest->
+            val questPage=destination==AppScreen.QUESTS
+            val x=if(questPage)listOf(65f,515f,915f,1315f)[i] else 25f+420*i
+            val width=if(questPage && i==0)350f else if(questPage)300f else 390f
+            scene.button(names[i],"tab_${dest.name}",x,if(questPage)1075f else 1100f,width,70f,dest==screen) {
+                if(dest==AppScreen.QUESTS)showRecommendations(recommendationSource) else show(dest)
+            }
+        }
         setContentView(scene)
     }
     private fun feedbackTripId()=selectedTrip ?: session.tripId ?: repository.trips().firstOrNull {it.endedAt!=null}?.tripId
@@ -346,7 +353,7 @@ class ChageunActivity: Activity() {
     fun recommendationDiagnostics()=(canvas as? RecommendationCanvas)?.result
     private fun chooseRecommendationSource() {
         AlertDialog.Builder(this).setTitle("맞춤 퀘스트 기준")
-            .setItems(arrayOf("Pleos 차량 주행 기록","자동 시연 · 차선변경 깜빡이 점수")){_,i->showRecommendations(if(i==0)"VEHICLE" else "REPLAY")}
+            .setItems(arrayOf("Pleos 차량 주행 기록","자동 시연 · 최근 연습 점수")){_,i->showRecommendations(if(i==0)"VEHICLE" else "REPLAY")}
             .setNegativeButton("닫기",null).show()
     }
     private fun recommendationDetails(q: com.hmgchallenge.pleosstarter.analysis.Recommendation) {
@@ -465,7 +472,7 @@ class ChageunActivity: Activity() {
                 1->{celebrationEnabled=!celebrationEnabled;saveSettings()}
                 2->AlertDialog.Builder(this).setTitle("설명 방식").setItems(BeginnerStyle.values().map {it.title}.toTypedArray()){_,n->session.manualStyle=BeginnerStyle.values()[n];saveSettings()}.show()
                 3->AlertDialog.Builder(this).setTitle("Pleos 연결 상태").setMessage("속도: ${if(telemetry.fresh)"${telemetry.speedMps} m/s" else "미수신/오래된 값"}\n방향지시등: ${telemetry.indicator}\n조향각(SDK): ${telemetry.steeringAngle}\n브레이크: ${telemetry.brakePressed}\n내비: ${telemetry.navigationStatus}\n음성: $voiceStatus\n축하: $celebrationStatus\n\n지도·차로·핸들은 시나리오 값입니다. 차량 신호는 신호 조건 퀘스트·피드백에 사용합니다. 실제 차로 위치 검증은 별도입니다.").setPositiveButton("확인",null).show()
-                4->AlertDialog.Builder(this).setTitle("지도 진행 속도").setItems(arrayOf("자동 재생 · 직진 40 / 접근 20 / 회전 10km/h","차량 SDK 속도 · 경로는 가상")){_,n->select(session.scenario.lesson,if(n==0)ScenarioSpeed.REPLAY else ScenarioSpeed.VEHICLE)}.show()
+                4->AlertDialog.Builder(this).setTitle("지도 진행 속도").setItems(arrayOf("자동 재생 · 직진 40 / 접근 40→30 / 회전 중 10km/h","차량 SDK 속도 · 경로는 가상")){_,n->select(session.scenario.lesson,if(n==0)ScenarioSpeed.REPLAY else ScenarioSpeed.VEHICLE)}.show()
                 5->openSimulationTools()
                 6->toggleQuestBannerStyle()
             }}.setNegativeButton("닫기",null).show()

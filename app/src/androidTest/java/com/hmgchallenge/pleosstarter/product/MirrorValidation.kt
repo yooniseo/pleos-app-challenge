@@ -32,6 +32,7 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
         var right=false
         var ended=false
         var stopped=false
+        val approachSpeeds=mutableListOf<Double>()
         var firstLaneOff=false
         var secondLaneRight=false
         var reverseSpeedMatched=false
@@ -43,6 +44,8 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
                 moving = moving || (state.getValue("speedMps").toDoubleOrNull() ?: 0.0)>1.0
                 right = right || state["sdkIndicator"]=="RIGHT"
                 val road=activity.session.scenario
+                if(road.lesson==RoadLesson.COMBINED && road.distance in (road.course.turnDistance-140)..road.course.turnDistance)
+                    state["speedMps"]?.toDoubleOrNull()?.let {approachSpeeds.add(it*3.6)}
                 if(road.lesson==RoadLesson.COMBINED && road.laneChangeProgress in .25.. .75 && road.changingLane) {
                     if(road.completedLaneChanges==0 && state["sdkIndicator"]=="OFF")firstLaneOff=true
                     if(road.completedLaneChanges==1 && state["sdkIndicator"]=="RIGHT")secondLaneRight=true
@@ -58,6 +61,10 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
             Thread.sleep(250)
         }
         check(moving && right && ended && stopped) {"SDK moving=$moving right=$right complete=$ended parked=$stopped"}
+        if(combined) {
+            check(approachSpeeds.size>=10 && approachSpeeds.all {it in 29.5..40.5} &&
+                approachSpeeds.first()>39 && approachSpeeds.last()<31) {"Unexpected SDK approach speeds: $approachSpeeds"}
+        }
         check(!combined || firstLaneOff && secondLaneRight) {"SDK lane signals first OFF=$firstLaneOff second RIGHT=$secondLaneRight"}
         check(!combined || reverseSpeedMatched && !rearCameraVisible) {"Reverse demo speed mismatch or parking coach covered by rear camera"}
         check(repository.trips().none {it.source=="VEHICLE"}) {"Mirrored replay leaked into personal driving records"}
@@ -82,7 +89,7 @@ fun Instrumentation.runMirrorValidation(combined: Boolean) {
             activity.show(AppScreen.MAP)
         }
         check(quest=="TURN_SIGNAL") {"Fresh replay recommendation: $quest"}
-        result.putString("result","PASS SDK moving, RIGHT, OFF, stopped; REPLAY-only Room trip and next recommendation=$quest; reverse speed matched=$reverseSpeedMatched rear camera visible=$rearCameraVisible")
+        result.putString("result","PASS SDK moving, RIGHT, OFF, stopped; REPLAY-only Room trip and next recommendation=$quest; approach km/h=${approachSpeeds.minOrNull()}..${approachSpeeds.maxOrNull()}; reverse speed matched=$reverseSpeedMatched rear camera visible=$rearCameraVisible")
         code=Activity.RESULT_OK
     } catch(e: Throwable) {
         result.putString("error",e.stackTraceToString())

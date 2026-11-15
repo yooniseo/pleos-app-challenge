@@ -8,10 +8,11 @@ class FigmaCoachAssets(context: Context) {
     private val assets=context.applicationContext.assets
     private val images=mutableMapOf<String,Bitmap>()
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    fun draw(canvas: Canvas,name: String,bounds: RectF) {
+    fun draw(canvas: Canvas,name: String,bounds: RectF,stretch: Boolean=false) {
         val bitmap=images.getOrPut(name) {
             assets.open("figma/$name.png").use {requireNotNull(BitmapFactory.decodeStream(it))}
         }
+        if(stretch){canvas.drawBitmap(bitmap,null,bounds,paint);return}
         val scale=minOf(bounds.width()/bitmap.width,bounds.height()/bitmap.height)
         val width=bitmap.width*scale;val height=bitmap.height*scale
         val rect=RectF(bounds.centerX()-width/2,bounds.centerY()-height/2,bounds.centerX()+width/2,bounds.centerY()+height/2)

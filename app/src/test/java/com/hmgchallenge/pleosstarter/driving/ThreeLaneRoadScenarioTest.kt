@@ -23,14 +23,18 @@ class ThreeLaneRoadScenarioTest {
             s.advance(50,null,false)
             if(s.currentLane!=previous){lanes.add(s.currentLane);previous=s.currentLane}
             if(s.distance in 180.0..240.0 && s.speedMps*3.6>39)cruise=true
-            if(s.distance in 480.0..510.0 && s.speedMps*3.6 in 19.0..21.0)approach=true
+            if(s.distance in (s.course.turnDistance-140)..s.course.turnDistance) {
+                approach=true
+                assertTrue(s.speedMps*3.6 in 29.99..40.01)
+            }
             if(s.distance in (s.course.turnDistance-8)..(s.course.turnDistance+40))
                 assertTrue("Unexpected left hook at connector: ${s.distance} ${s.steeringTarget}",s.steeringTarget> -12)
             if(s.turning) {
                 turn=true;assertEquals(2,s.completedLaneChanges);assertEquals(3,s.currentLane)
-                assertTrue(s.speedMps*3.6<=10.1 || s.distance>s.course.turnDistance+80)
+                if(s.distance in (s.course.turnDistance+20)..(s.course.turnDistance+80))assertEquals(10.0,s.speedMps*3.6,.1)
             }
         }
+        assertEquals(30.0,s.turnEntryKmh!!,.1)
         assertEquals(listOf(1,2,3),lanes)
         assertTrue(cruise && approach && turn && s.complete)
     }

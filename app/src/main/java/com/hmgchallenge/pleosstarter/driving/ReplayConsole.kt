@@ -23,9 +23,7 @@ data class ReplayControls(val gear: String, val speed: Int, val steering: Int, v
             val turn = s.lesson == RoadLesson.TURN || s.lesson == RoadLesson.COMBINED
             val signal = override ?: s.replaySignal()
             val reversing = s.lesson == RoadLesson.PARKING && s.parkingGear == "R"
-            val slowing = turn && s.distance in (s.course.turnDistance - 140)..s.course.turnDistance
-            val targetKmh = if (s.distance < s.course.turnDistance - 30) 20 else 10
-            val braking = s.speedMps == 0.0 || (slowing && s.speedMps * 3.6 > targetKmh + 0.1)
+            val braking = s.speedMps == 0.0 || (turn && s.speedMps*3.6 > s.roadReplayTargetKmh(s.distance)+0.1)
             val brake = if (braking) 25 else 0
             return ReplayControls(if (reversing) "Reverse" else "Drive", (s.speedMps * 3.6).roundToInt(),
                 -s.steeringTarget.roundToInt(), brake, signal)

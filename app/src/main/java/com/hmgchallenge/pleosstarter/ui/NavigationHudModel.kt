@@ -43,13 +43,7 @@ data class NavigationHudModel(val cues: List<HudCue>,val remainingMetres: Double
             var distance=s.distance;var seconds=0.0
             while(distance<s.endDistance) {
                 val step=min(2.0,s.endDistance-distance)
-                val kmh=when {
-                    s.lesson==RoadLesson.LANE->40.0
-                    distance>=s.course.turnDistance+80->20.0
-                    distance>=s.course.turnDistance-30->10.0
-                    distance>=s.course.turnDistance-140->20.0
-                    else->40.0
-                }
+                val kmh=s.roadReplayTargetKmh(distance)
                 seconds+=step/(kmh/3.6);distance+=step
             }
             return seconds

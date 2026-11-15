@@ -54,6 +54,20 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
     val parkingGear get()=if(complete || !started)"P" else if(distance<5)"D" else "R"
     val progress get() = (distance-startDistance)/(endDistance-startDistance)
     fun start() { started = true }
+    companion object {
+        const val APPROACH_KMH=30.0
+    }
+
+    fun roadReplayTargetKmh(atMetres: Double): Double {
+        if(lesson==RoadLesson.LANE)return 40.0
+        val remaining=course.turnDistance-atMetres
+        return when {
+            remaining<=-80 -> 20.0
+            remaining<=0 -> 10.0
+            else -> APPROACH_KMH+10.0*((remaining-15.0)/45.0).coerceIn(0.0,1.0)
+        }
+    }
+
     fun advance(elapsedMs: Long, vehicleMps: Double?, fresh: Boolean, signalOverride: Indicator?=null) {
         if(lesson==RoadLesson.PARKING && started && distance>=5 && parkingWaitMs<5000) {
             if(elapsedMs in 1..1000)parkingWaitMs+=elapsedMs
@@ -63,13 +77,7 @@ class SimpleRoadScenario(roadCourse: NavigationSimulationRoute, val lesson: Road
             !started || complete -> 0.0
             lesson==RoadLesson.PARKING -> if(distance<5)3.0/3.6 else 2.0/3.6
             source == ScenarioSpeed.REPLAY -> {
-                val target=when {
-                    lesson==RoadLesson.LANE->40.0/3.6
-                    distance>=course.turnDistance+80->20.0/3.6
-                    distance>=course.turnDistance-30->10.0/3.6
-                    distance>=course.turnDistance-140->20.0/3.6
-                    else->40.0/3.6
-                }
+                val target=roadReplayTargetKmh(distance)/3.6
                 val dt=elapsedMs.coerceIn(0,1000)/1000.0
                 target.coerceIn((speedMps-2*dt).coerceAtLeast(0.0),speedMps+1.5*dt)
             }

@@ -1,5 +1,6 @@
 package com.hmgchallenge.pleosstarter.core.data
 
+import com.hmgchallenge.pleosstarter.driving.SimpleRoadScenario
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -109,7 +110,7 @@ class SharedCoachRepository(val database: TripDatabase) {
 
     fun beginTrip(id: String,lesson: String,speedSource: String,at: Long,targetCount: Int=if(lesson=="COMBINED")2 else 1): Boolean=write("trip") {
         dao.saveTrip(Trip(id,at,null,if(speedSource=="VEHICLE")"VEHICLE" else "REPLAY",0f))
-        dao.saveSnapshot(AppSnapshot("trip:$id",JSONObject().put("lesson",lesson).put("profile","demo").put("speedSource",speedSource).put("scenario",true).put("runtime","product-v1").put("targetCount",targetCount).put("status","ACTIVE").toString(),at))
+        dao.saveSnapshot(AppSnapshot("trip:$id",JSONObject().put("lesson",lesson).put("profile","demo").put("speedSource",speedSource).put("scenario",true).put("runtime","product-v1").put("turnEntryTargetKmh",SimpleRoadScenario.APPROACH_KMH).put("targetCount",targetCount).put("status","ACTIVE").toString(),at))
     }
     fun sample(id: String,t: Long,kmh: Float?,distanceKm: Float) {
         // Fire-and-forget only for telemetry; later state writes/readbacks queue behind this work.
@@ -226,16 +227,18 @@ class SharedCoachRepository(val database: TripDatabase) {
         val laneSignals=maneuvers.filter {it.optJSONObject("context")?.optString("kind")=="LANE_RIGHT"}
             .map {it.optString("detail")}.filter {it in setOf("RIGHT","LEFT","OFF")}
         val replayScores=JSONObject().apply {
-            val roadLesson=dao.snapshot("trip:$id")?.value?.let(::JSONObject)?.optString("lesson")
+            val replayMeta=dao.snapshot("trip:$id")?.value?.let(::JSONObject)
+            val roadLesson=replayMeta?.optString("lesson")
             if(trip?.source=="REPLAY" && roadLesson in setOf("COMBINED","LANE","TURN")) {
                 listOf(DrivingSkill.SMOOTH_ACCEL,DrivingSkill.BRAKING).forEach {skill->
                     analysis.scores[skill]?.let {put(skill.name,it)}
                 }
                 put("lowConfidence",analysis.lowConfidence)
-                // The authored course calls for 10 km/h at the turn. Allow one km/h for discrete ticks.
+                // Historical replays used a 10 km/h entry target. Grade each trip against its own course.
+                val entryTarget=replayMeta?.optDouble("turnEntryTargetKmh",10.0) ?: 10.0
                 val turnKmh=maneuvers.firstOrNull {it.optJSONObject("context")?.optString("kind")=="TURN_RIGHT" &&
                     it.optString("detail").toDoubleOrNull()!=null}?.getString("detail")?.toDouble()
-                if(turnKmh!=null)put(DrivingSkill.TURN_SLOWDOWN.name,if(turnKmh<=11.0)100 else 0)
+                if(turnKmh!=null)put(DrivingSkill.TURN_SLOWDOWN.name,if(turnKmh<=entryTarget+1.0)100 else 0)
             }
             if(laneSignals.isNotEmpty()) {
                 val successes=laneSignals.count {it=="RIGHT"}

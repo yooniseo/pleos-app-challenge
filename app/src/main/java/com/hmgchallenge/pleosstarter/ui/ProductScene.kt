@@ -43,14 +43,19 @@ abstract class SceneCanvas(context: Context,protected val assets: ProductIllustr
 
 /** Native controls provide focus and accessibility; the imagery beneath stays data driven. */
 class ProductScene(context: Context,canvas: View): FrameLayout(context) {
+    private val questPage=canvas is QuestPageCanvas
     private val slots=mutableMapOf<View,RectF>()
     init {addView(canvas,LayoutParams(-1,-1));clipChildren=true}
     fun button(label: String,key: String,x: Float,y: Float,w: Float,h: Float,primary: Boolean=false,action: ()->Unit): Button = Button(context).apply {
         text=label;tag=key;contentDescription=label;isAllCaps=false;minimumWidth=0;minWidth=0;minHeight=0;minimumHeight=0
         setPadding(8,0,8,0);typeface=resources.getFont(R.font.asta_sans_medium)
-        setTextColor(if(primary)Color.WHITE else Palette.ink)
-        background=GradientDrawable().apply {setColor(if(primary)Palette.purple else Color.WHITE);cornerRadius=32f}
-        elevation=2f;setOnClickListener {action()};addView(this);slots[this]=RectF(x,y,x+w,y+h)
+        setTextColor(if(primary)Color.WHITE else if(questPage)Color.DKGRAY else Palette.ink)
+        background=GradientDrawable().apply {
+            setColor(if(primary && questPage)0xff558bed.toInt() else if(primary)Palette.purple else Color.WHITE)
+            cornerRadius=if(questPage)100f else 32f
+            if(questPage && !primary && key.startsWith("tab_"))setStroke(2,0xffc9c9c9.toInt())
+        }
+        elevation=if(questPage && !key.startsWith("tab_"))0f else 2f;setOnClickListener {action()};addView(this);slots[this]=RectF(x,y,x+w,y+h)
     }
     override fun onMeasure(w: Int,h: Int) {
         super.onMeasure(w,h)
