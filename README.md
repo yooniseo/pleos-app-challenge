@@ -4,13 +4,13 @@
 
 ## 제출용 APK
 
-팀명: **뿌까** · 앱명: **차근차근**
+팀명: **코치꼬치** · 앱명: **차근차근**
 
-- 저장소 내 APK 경로: [apk/뿌까_차근차근_release.apk](apk/뿌까_차근차근_release.apk)
+- 저장소 내 APK 경로: [apk/코치꼬치_차근차근_release.apk](apk/코치꼬치_차근차근_release.apk)
 
-- [차근차근 0.3.0 release APK 다운로드](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0-submission-final/%EB%BF%8C%EA%B9%8C_%EC%B0%A8%EA%B7%BC%EC%B0%A8%EA%B7%BC_release.apk)
-- [GitHub Release · 설치 파일과 검증 결과](https://github.com/yooniseo/pleos-app-challenge/releases/tag/v0.3.0-submission-final)
-- [제출 버전 소스 코드](https://github.com/yooniseo/pleos-app-challenge/tree/v0.3.0-submission-final) · [APK SHA-256 확인](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0-submission-final/SHA256SUMS.txt)
+- [차근차근 0.3.0 release APK 다운로드](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0-submission-coachkkochi/%EC%BD%94%EC%B9%98%EA%BC%AC%EC%B9%98_%EC%B0%A8%EA%B7%BC%EC%B0%A8%EA%B7%BC_release.apk)
+- [GitHub Release · 설치 파일과 검증 결과](https://github.com/yooniseo/pleos-app-challenge/releases/tag/v0.3.0-submission-coachkkochi)
+- [제출 버전 소스 코드](https://github.com/yooniseo/pleos-app-challenge/tree/v0.3.0-submission-coachkkochi) · [APK SHA-256 확인](https://github.com/yooniseo/pleos-app-challenge/releases/download/v0.3.0-submission-coachkkochi/SHA256SUMS.txt)
 
 별도 키로 서명한 release APK이며 디버깅은 비활성화되어 있습니다. Pleos 에뮬레이터에서 평가하는 제출 버전입니다.
 
@@ -60,7 +60,7 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 $serial = "emulator-5554"
 $androidUser = (& $adb -s $serial shell am get-current-user).Trim()
 
-& $adb -s $serial install -r --user $androidUser .\뿌까_차근차근_release.apk
+& $adb -s $serial install -r --user $androidUser .\코치꼬치_차근차근_release.apk
 & $adb -s $serial shell pm grant --user $androidUser com.hmgchallenge.pleosstarter android.car.permission.CAR_SPEED
 & $adb -s $serial shell appops set --user $androidUser com.hmgchallenge.pleosstarter SYSTEM_ALERT_WINDOW allow
 & $adb -s $serial shell am start --user $androidUser -W -n com.hmgchallenge.pleosstarter/.app.ChageunActivity
