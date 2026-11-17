@@ -96,6 +96,13 @@ release에서도 에뮬레이터의 로컬 Virtual Console(`127.0.0.1:8088`)에 
 | 신가인 · [@ssggiisgi](https://github.com/ssggiisgi) | 차량 속도·음성 인식 실험, Room 데이터 모델, 주행 분석과 맞춤 퀘스트 추천 | [주행 점수와 맞춤 퀘스트](https://github.com/yooniseo/pleos-app-challenge/commit/a6897f099086b2dc144aa89d84c40488e9429860) |
 | 박서연 · [@SYParkky](https://github.com/SYParkky) | 퀘스트 보드, 차량 신호를 이용한 주행 동작 감지, 퀘스트 화면 원형 | [퀘스트 브랜치의 원본 구현](https://github.com/yooniseo/pleos-app-challenge/commit/fba21000320126e698b300abe25863944ed27455) |
 
+## 디자인 작업
+
+| 기여자 | 
+| --- |
+| 박수정 · [@parksujeong10447](https://github.com/parksujeong10447) | 
+| 조은지 · [@OUR2525](https://github.com/OUR2525) | 
+
 ## 빌드와 검사
 
 ### 서명된 release 빌드
